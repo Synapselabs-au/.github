@@ -21,8 +21,8 @@ We treat venture building as an operating discipline:
 
 | Venture | Focus |
 | --- | --- |
-| [BoltScope](https://getboltscope.com) | Climate and supply-chain software for more trustworthy, useful Scope 3 reporting. |
-| [Fork](https://fork-weld.vercel.app) | Social technology exploring how online communities can work differently when incentives are redesigned from first principles. |
+| [BoltScope](https://boltscope.com.au) | Climate and supply-chain software for more trustworthy, useful Scope 3 reporting. |
+| [FORK](https://fork-weld.vercel.app) | FORK is a social experiment network where two friends take opposite sides of a safe, reversible choice, live the outcomes, and reveal both paths together. |
 
 Our ventures develop under their own identities while sharing Synapse Labs'
 product, technology, operating, and capital-allocation capability.
