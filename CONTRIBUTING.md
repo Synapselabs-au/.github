@@ -12,6 +12,9 @@ be discussed in context.
 - Do not include secrets, personal data, generated build output, or unrelated
   formatting changes.
 - Follow the repository's own development instructions when they are present.
+- Follow the organization
+  [GitHub Actions and protected delivery policy](WORKFLOW_POLICY.md) for
+  workflow, runner, and protected-branch changes.
 
 All contributions are reviewed before merging. By participating, you agree to
 follow the [Code of Conduct](CODE_OF_CONDUCT.md).
