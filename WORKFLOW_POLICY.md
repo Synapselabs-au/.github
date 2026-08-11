@@ -45,21 +45,29 @@ result. Keep a post-merge push job only when it provides a distinct signal,
 such as deployment, migration verification, or browser coverage not exercised
 before merge.
 
-Use explicit pull request activity types. At minimum, account for opened,
-reopened, `synchronize`, `ready_for_review`, `converted_to_draft`, `edited`, and
-closed events when those events affect validation or cancellation. Detect a
-base-branch edit from `changes.base` in the `edited` event payload. A repository
-using a merge queue must also run each required check on `merge_group`.
+Use explicit pull request activity types for repository workflows. At minimum,
+account for opened, reopened, `synchronize`, `ready_for_review`,
+`converted_to_draft`, `edited`, and closed events when those events affect
+validation or cancellation. Detect a base-branch edit from `changes.base` in
+the `edited` event payload. A repository using a merge queue must also run each
+required check on `merge_group`.
+
+Ruleset-required workflows are different: GitHub ignores their branch and
+activity filters and runs them only for opened, synchronized, and reopened pull
+requests. Do not claim cancellation or revalidation on unsupported events. A
+pull request retargeted into a protected branch, or affected by a required
+workflow source update, must be reopened or receive a new commit before merge.
 
 Do not use workflow-level path exclusions for a required workflow. A required
 workflow that never starts can remain pending forever. Put conservative
 change classification inside an always-created stable job, then use a cheap
 validation lane for documentation-only changes.
 
-Draft pull requests must not accidentally satisfy required checks through
-skipped jobs. Use a cheap blocking path, or keep draft workflows non-required
-with a separate stable gate that cannot report green until the pull request is
-ready.
+Draft pull requests must not satisfy a required check through skipped jobs. A
+ruleset-required workflow may retain exact-head evidence while the pull request
+is draft because GitHub does not rerun it on `ready_for_review`; draft state
+itself prevents merge. Expensive providers must apply their own path and cost
+controls independently.
 
 ## Concurrency and stale runs
 

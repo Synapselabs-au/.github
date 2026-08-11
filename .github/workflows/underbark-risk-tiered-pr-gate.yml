@@ -7,187 +7,133 @@ permissions:
 
 on:
   pull_request:
-    branches: [dev]
 
 concurrency:
   group: underbark-pr-gate-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.run_attempt == 1 }}
 
 jobs:
-  classify:
-    name: Classify trusted verification scope
+  result:
+    name: Underbark PR Gate result
+    if: ${{ github.repository == 'Synapselabs-au/Underbark' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      base-sha: ${{ steps.scope.outputs.base-sha }}
-      head-sha: ${{ steps.scope.outputs.head-sha }}
-      classification: ${{ steps.scope.outputs.classification }}
+    timeout-minutes: 65
     steps:
-      - name: Check out trusted policy
+      - name: Check out trusted gate
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          repository: Synapselabs-au/Underbark
-          ref: bbf1aac5b61884d4f5c934e2f21bf36d8a29778f
-          path: .policy
+          repository: Synapselabs-au/.github
+          ref: ${{ github.workflow_sha }}
+          path: .gate
           persist-credentials: false
+
       - name: Check out candidate without credentials
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           path: .candidate
           persist-credentials: false
-      - name: Classify the live pull request with trusted policy
-        id: scope
+
+      - name: Enforce risk-tiered verification
         env:
+          APPLE_APP_ID: "117084"
+          APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          bash .policy/scripts/verify-ci-classifier.sh
-          bash .policy/scripts/verify-apple-pr-check-tests.sh
-          bash .policy/scripts/verify-trust-anchors.sh \
-            .policy HEAD .policy HEAD
-          bash .policy/scripts/verify-engineering-policy.sh .policy HEAD
-          bash .policy/scripts/verify-risk-tiered-pr-gate-tests.sh
+          set -euo pipefail
 
-          read -r LIVE_HEAD LIVE_BASE_REF LIVE_STATE < <(gh api \
-            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
-            --jq '[.head.sha, .base.ref, .state] | @tsv')
-          LIVE_BASE_SHA=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/git/ref/heads/${LIVE_BASE_REF}" \
-            --jq '.object.sha')
-          LIVE_MERGE_BASE=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/compare/${LIVE_BASE_SHA}...${LIVE_HEAD}" \
-            --jq '.merge_base_commit.sha')
+          bash .gate/scripts/test-classify-underbark-pr.sh
 
-          if [[ "$LIVE_HEAD" != "$EVENT_HEAD" \
-            || "$LIVE_BASE_REF" != "$EVENT_BASE_REF" \
-            || "$LIVE_STATE" != "open" \
-            || "$LIVE_MERGE_BASE" != "$LIVE_BASE_SHA" ]]; then
-            echo "Refusing stale, closed, wrong-base, or behind pull request state." >&2
-            exit 1
-          fi
+          read_live_tuple() {
+            read -r LIVE_HEAD LIVE_BASE_REF LIVE_STATE < <(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv')
+            LIVE_BASE_SHA="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${LIVE_BASE_REF}" \
+              --jq '.object.sha')"
+            LIVE_MERGE_BASE="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/compare/${LIVE_BASE_SHA}...${LIVE_HEAD}" \
+              --jq '.merge_base_commit.sha')"
+          }
 
+          require_current_tuple() {
+            read_live_tuple
+            if [[ "$LIVE_HEAD" != "$EVENT_HEAD" \
+              || "$LIVE_BASE_REF" != "$EVENT_BASE_REF" \
+              || "$LIVE_STATE" != "open" \
+              || "$LIVE_MERGE_BASE" != "$LIVE_BASE_SHA" ]]; then
+              echo "Refusing stale, closed, wrong-base, or behind pull request state." >&2
+              exit 1
+            fi
+          }
+
+          require_current_tuple
           git -C .candidate cat-file -e "${LIVE_BASE_SHA}^{commit}"
           git -C .candidate cat-file -e "${LIVE_HEAD}^{commit}"
           git -C .candidate diff --check "${LIVE_BASE_SHA}...${LIVE_HEAD}"
+
           classification="$(
-            git -C .candidate diff --name-only --no-renames --diff-filter=ACDMRT -z \
+            git -C .candidate diff --name-status --no-renames -z \
               "${LIVE_BASE_SHA}...${LIVE_HEAD}" \
-              | .policy/scripts/classify-ci-changes.sh
+              | .gate/scripts/classify-underbark-pr.sh
           )"
-
-          case "$classification" in
-            c0-docs|governance-static|apple-required|governance-and-apple-required|blocked-governance)
-              ;;
-            *)
-              echo "Unexpected verification classification: $classification" >&2
-              exit 1
-              ;;
-          esac
-
-          echo "base-sha=${LIVE_BASE_SHA}" >> "$GITHUB_OUTPUT"
-          echo "head-sha=${LIVE_HEAD}" >> "$GITHUB_OUTPUT"
-          echo "classification=${classification}" >> "$GITHUB_OUTPUT"
           echo "Trusted verification classification: ${classification}."
 
-  governance-validation:
-    name: Validate candidate governance
-    needs: classify
-    if: ${{ contains(fromJSON('["governance-static", "governance-and-apple-required"]'), needs.classify.outputs.classification) }}
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Check out trusted policy
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          repository: Synapselabs-au/Underbark
-          ref: bbf1aac5b61884d4f5c934e2f21bf36d8a29778f
-          path: .policy
-          persist-credentials: false
-      - name: Check out candidate without credentials
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: .candidate
-          persist-credentials: false
-      - name: Validate candidate governance with trusted fixtures
-        run: |
-          bash .policy/scripts/verify-trust-anchors.sh \
-            .policy HEAD .candidate HEAD
-          bash .policy/scripts/verify-engineering-policy.sh .candidate HEAD
-
-  apple-verification:
-    name: Require exact-head Apple verification
-    needs: classify
-    if: ${{ contains(fromJSON('["apple-required", "governance-and-apple-required"]'), needs.classify.outputs.classification) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 65
-    steps:
-      - name: Check out trusted policy
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          repository: Synapselabs-au/Underbark
-          ref: bbf1aac5b61884d4f5c934e2f21bf36d8a29778f
-          path: .policy
-          persist-credentials: false
-      - name: Wait for the exact Apple app-pinned result
-        env:
-          BASE_SHA: ${{ needs.classify.outputs.base-sha }}
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ needs.classify.outputs.head-sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          .policy/scripts/require-apple-pr-check.sh \
-            "$PR_NUMBER" "$BASE_SHA" "$HEAD_SHA"
-
-  result:
-    name: Underbark PR Gate result
-    needs: [classify, governance-validation, apple-verification]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Require complete risk-tiered evidence
-        env:
-          APPLE_RESULT: ${{ needs.apple-verification.result }}
-          CLASSIFICATION: ${{ needs.classify.outputs.classification }}
-          CLASSIFY_RESULT: ${{ needs.classify.result }}
-          GOVERNANCE_RESULT: ${{ needs.governance-validation.result }}
-        run: |
-          if [[ "$CLASSIFY_RESULT" != "success" ]]; then
-            echo "Trusted classification failed: ${CLASSIFY_RESULT}." >&2
-            exit 1
-          fi
-
-          case "$CLASSIFICATION" in
-            c0-docs)
-              [[ "$GOVERNANCE_RESULT" == "skipped" ]] || exit 1
-              [[ "$APPLE_RESULT" == "skipped" ]] || exit 1
+          case "$classification" in
+            static)
+              require_current_tuple
+              echo "Static verification is complete. Apple compute is not required."
+              exit 0
               ;;
-            governance-static)
-              [[ "$GOVERNANCE_RESULT" == "success" ]] || exit 1
-              [[ "$APPLE_RESULT" == "skipped" ]] || exit 1
-              ;;
-            apple-required)
-              [[ "$GOVERNANCE_RESULT" == "skipped" ]] || exit 1
-              [[ "$APPLE_RESULT" == "success" ]] || exit 1
-              ;;
-            governance-and-apple-required)
-              [[ "$GOVERNANCE_RESULT" == "success" ]] || exit 1
-              [[ "$APPLE_RESULT" == "success" ]] || exit 1
-              ;;
-            blocked-governance)
-              echo "Unsupported repository governance path." >&2
+            blocked)
+              echo "The diff contains an unclassified path. Update the trusted gate before merge." >&2
               exit 1
               ;;
+            apple)
+              ;;
             *)
+              echo "Unexpected verification classification: ${classification}." >&2
               exit 1
               ;;
           esac
 
-          echo "Risk-tiered pull request evidence is complete."
+          for attempt in $(seq 1 120); do
+            require_current_tuple
+            check_json="$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${LIVE_HEAD}/check-runs?per_page=100")"
+            check="$(jq -c \
+              --arg name "$APPLE_CHECK_NAME" \
+              --argjson app_id "$APPLE_APP_ID" \
+              --argjson pr_number "$PR_NUMBER" \
+              '[.check_runs[]
+                | select(.name == $name and .app.id == $app_id)
+                | select(any(.pull_requests[]?; .number == $pr_number))]
+               | sort_by(.id)
+               | last // empty' <<<"$check_json")"
+
+            if [ -n "$check" ]; then
+              status="$(jq -r '.status' <<<"$check")"
+              conclusion="$(jq -r '.conclusion // ""' <<<"$check")"
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" != "success" ]; then
+                  echo "Exact Apple verification completed with ${conclusion:-no conclusion}." >&2
+                  exit 1
+                fi
+                require_current_tuple
+                echo "Exact-head Apple verification succeeded."
+                exit 0
+              fi
+            fi
+
+            echo "Waiting for exact-head Apple verification (${attempt}/120)."
+            sleep 30
+          done
+
+          echo "Timed out waiting for exact-head Apple verification." >&2
+          exit 1
