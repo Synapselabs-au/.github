@@ -95,6 +95,7 @@ if [ "$job_count" -ne 1 ]; then
 fi
 
 expect_workflow_contains "name: Underbark PR Gate result" "must keep the stable required-check name"
+expect_workflow_contains "github.repository == 'Synapselabs-au/Underbark'" "must not execute as a normal workflow in the trust repository"
 expect_workflow_contains "runs-on: ubuntu-latest" "must use the cheap Linux runner"
 expect_workflow_contains 'ref: ${{ github.workflow_sha }}' "must bind trusted code to the workflow source SHA"
 expect_workflow_contains "git -C .candidate diff --name-status --no-renames -z" "must classify the exact diff"

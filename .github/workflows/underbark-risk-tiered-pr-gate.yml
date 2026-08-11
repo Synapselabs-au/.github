@@ -15,6 +15,7 @@ concurrency:
 jobs:
   result:
     name: Underbark PR Gate result
+    if: ${{ github.repository == 'Synapselabs-au/Underbark' }}
     runs-on: ubuntu-latest
     timeout-minutes: 65
     steps:
