@@ -121,6 +121,7 @@ jobs:
           git -C .candidate cat-file -e "${LIVE_BASE_SHA}^{commit}"
           git -C .candidate cat-file -e "${LIVE_HEAD}^{commit}"
           git -C .candidate diff --check "${LIVE_BASE_SHA}...${LIVE_HEAD}"
+          python3 .gate/scripts/verify-underbark-supabase-config.py .candidate/supabase/config.toml
 
           if git -C .candidate diff --quiet "${LIVE_BASE_SHA}...${LIVE_HEAD}"; then
             require_release_context
@@ -250,7 +251,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - name: Check out candidate without persisted credentials
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -282,10 +283,18 @@ jobs:
           }
           trap cleanup EXIT
 
-          timeout 15m supabase db start --workdir .
           expected_postgres_digest="public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459"
+          expected_postgres_tag="public.ecr.aws/supabase/postgres:17.6.1.158"
+          timeout 10m docker pull "$expected_postgres_digest"
+          preflight_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
+          timeout 1m docker tag "$preflight_image_id" "$expected_postgres_tag"
+          tagged_image_id="$(timeout 1m docker image inspect "$expected_postgres_tag" --format '{{.Id}}')"
+          if [[ "$tagged_image_id" != "$preflight_image_id" ]]; then
+            echo "The Supabase CLI Postgres tag does not resolve to the trusted image." >&2
+            exit 1
+          fi
+          timeout 15m supabase db start --workdir .
           running_image_id="$(timeout 1m docker inspect --format '{{.Image}}' supabase_db_underbark)"
-          expected_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
           mapfile -t running_repo_digests < <(timeout 1m docker image inspect "$running_image_id" --format '{{range .RepoDigests}}{{println .}}{{end}}' | LC_ALL=C sort -u)
           digest_match=0
           for repo_digest in "${running_repo_digests[@]}"; do
@@ -293,7 +302,7 @@ jobs:
               digest_match=1
             fi
           done
-          if [[ "$running_image_id" != "$expected_image_id" || "$digest_match" -ne 1 ]]; then
+          if [[ "$running_image_id" != "$preflight_image_id" || "$digest_match" -ne 1 ]]; then
             echo "The disposable Postgres image does not match the trusted digest." >&2
             exit 1
           fi

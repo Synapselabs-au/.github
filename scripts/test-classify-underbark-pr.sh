@@ -108,6 +108,7 @@ expect_workflow_contains "github.repository == 'Synapselabs-au/Underbark'" "must
 expect_workflow_contains "runs-on: ubuntu-latest" "must use the cheap Linux runner"
 expect_workflow_contains 'ref: ${{ github.workflow_sha }}' "must bind trusted code to the workflow source SHA"
 expect_workflow_contains "git -C .candidate diff --name-status --no-renames -z" "must classify the exact diff"
+expect_workflow_contains 'python3 .gate/scripts/verify-underbark-supabase-config.py .candidate/supabase/config.toml' "must verify complete Supabase configuration semantics before classification succeeds"
 expect_workflow_contains 'git -C .candidate diff --quiet "${LIVE_BASE_SHA}...${LIVE_HEAD}"' "must isolate the empty-diff ancestry path"
 expect_workflow_contains 'verify-underbark-ancestry-sync.sh' "must verify exact ancestry-sync parents and tree"
 expect_workflow_contains 'git/ref/heads/main' "must bind the ancestry sync to current main"

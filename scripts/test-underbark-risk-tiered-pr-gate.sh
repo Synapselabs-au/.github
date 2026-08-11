@@ -7,6 +7,7 @@ failures=0
 
 bash "${script_dir}/test-classify-underbark-pr.sh"
 bash "${script_dir}/test-verify-underbark-release-context.sh"
+python3 "${script_dir}/test-verify-underbark-supabase-config.py"
 
 if ! ruby -ryaml - "$workflow" <<'RUBY'
 require "digest"
@@ -57,7 +58,7 @@ raise "continue-on-error is globally prohibited" if YAML.dump(workflow).include?
 expected_timeouts = {
   "classify" => 10,
   "functions" => 45,
-  "database" => 40,
+  "database" => 50,
   "apple" => 65,
   "result" => 10,
 }
@@ -143,10 +144,18 @@ EXPECTED_DATABASE_RUN = <<~'BASH'
   }
   trap cleanup EXIT
 
-  timeout 15m supabase db start --workdir .
   expected_postgres_digest="public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459"
+  expected_postgres_tag="public.ecr.aws/supabase/postgres:17.6.1.158"
+  timeout 10m docker pull "$expected_postgres_digest"
+  preflight_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
+  timeout 1m docker tag "$preflight_image_id" "$expected_postgres_tag"
+  tagged_image_id="$(timeout 1m docker image inspect "$expected_postgres_tag" --format '{{.Id}}')"
+  if [[ "$tagged_image_id" != "$preflight_image_id" ]]; then
+    echo "The Supabase CLI Postgres tag does not resolve to the trusted image." >&2
+    exit 1
+  fi
+  timeout 15m supabase db start --workdir .
   running_image_id="$(timeout 1m docker inspect --format '{{.Image}}' supabase_db_underbark)"
-  expected_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
   mapfile -t running_repo_digests < <(timeout 1m docker image inspect "$running_image_id" --format '{{range .RepoDigests}}{{println .}}{{end}}' | LC_ALL=C sort -u)
   digest_match=0
   for repo_digest in "${running_repo_digests[@]}"; do
@@ -154,7 +163,7 @@ EXPECTED_DATABASE_RUN = <<~'BASH'
       digest_match=1
     fi
   done
-  if [[ "$running_image_id" != "$expected_image_id" || "$digest_match" -ne 1 ]]; then
+  if [[ "$running_image_id" != "$preflight_image_id" || "$digest_match" -ne 1 ]]; then
     echo "The disposable Postgres image does not match the trusted digest." >&2
     exit 1
   fi
@@ -215,16 +224,19 @@ EXPECTED_CANDIDATE_JOB_STEPS = {
 }.freeze
 
 EXPECTED_TRUSTED_RUN_SHA256 = {
-  "classify" => "e48b3ca47e7b76f0717176af634af0310164ea3475b1be5ba9fd7b7699dfef35",
+  "classify" => "02f73cd26dcfb405985fb886258c7bdd315f6877a376cb190eac526ee5aab8b3",
   "apple" => "93d8d4164687158f2f6260d19e87547301e8e2b46031409180de101b9cf857bb",
   "result" => "799dae466b679261da5cc9ad2ebb8ff71eb593a065da0e7efd803a72d5e35df2",
 }.freeze
 
 EXPECTED_TRUSTED_STEPS_SHA256 = {
-  "classify" => "61a5536484324b7a9935219054ad18b5c11770bf5ea040c6b7c54258425b1021",
+  "classify" => "59ab5e0bc6e55a988a7ca63be1a2b4cad4b7fe2771a186191e5f140f06eb4d06",
   "apple" => "fde3f5f3cda4723647241559b0a6c3b99fe4417da9a45b39581d8bb0c305baeb",
   "result" => "722e756803e12aa09e8066dead7cd10e6b6aa657e134c1bc04c6c80cec9de24b",
 }.freeze
+
+config_verifier = File.expand_path("../../scripts/verify-underbark-supabase-config.py", File.dirname(ARGV.fetch(0)))
+raise "trusted Supabase config verifier contract changed" unless Digest::SHA256.file(config_verifier).hexdigest == "b890e0230ede657563052ac6e698237c55f4f7a7d5675ba155be601188f6be99"
 
 def require_exact_candidate_job_contract(jobs, job_name, expected_steps)
   actual = jobs.fetch(job_name).fetch("steps")
@@ -292,6 +304,12 @@ end
 
 validate_candidate_boundaries(workflow)
 
+classify_run = run_scripts(jobs.fetch("classify")).join("\n")
+config_verify_index = classify_run.index("verify-underbark-supabase-config.py") or raise "trusted Supabase config verification missing"
+ancestry_branch_index = classify_run.index('if git -C .candidate diff --quiet') or raise "ancestry branch missing"
+classifier_index = classify_run.index("classify-underbark-pr.sh") or raise "path classifier missing"
+raise "Supabase config semantics are not verified before success paths" unless config_verify_index < ancestry_branch_index && config_verify_index < classifier_index
+
 fixture = Marshal.load(Marshal.dump(workflow))
 fixture.fetch("jobs").fetch("classify").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\ndock''er run --privileged alpine true\n" }
 expect_boundary_rejection("composed Docker in trusted classification", fixture, /\Atrusted classify run script contract changed\z/)
@@ -335,6 +353,14 @@ fixture = Marshal.load(Marshal.dump(workflow))
 database_step = fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"].to_s.include?("trap cleanup EXIT") }
 raise "database trap fixture construction failed" unless database_step["run"].sub!("trap cleanup EXIT", "true")
 expect_boundary_rejection("removed database cleanup trap", fixture, /\Acandidate database execution step contract changed\z/)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+database_step = fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"].to_s.include?("expected_postgres_digest") }
+raise "preflight tag fixture construction failed" unless database_step["run"].sub!(
+  'docker tag "$preflight_image_id" "$expected_postgres_tag"',
+  'docker tag latest-postgres "$expected_postgres_tag"',
+)
+expect_boundary_rejection("untrusted Postgres preflight tag", fixture, /\Acandidate database execution step contract changed\z/)
 
 fixture = Marshal.load(Marshal.dump(workflow))
 fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\ndeno test supabase/functions\n" }
@@ -447,11 +473,14 @@ raise "token job boundary changed" unless token_jobs == %w[classify apple result
 
 database_run = run_scripts(jobs.fetch("database")).join("\n")
 start_index = database_run.index("supabase db start") or raise "database start missing"
+pull_index = database_run.index('docker pull "$expected_postgres_digest"') or raise "trusted Postgres preflight pull missing"
+tag_index = database_run.index('docker tag "$preflight_image_id" "$expected_postgres_tag"') or raise "trusted Postgres CLI tag missing"
 sql_index = database_run.index("psql ") or raise "SQL suites missing"
 cleanup_index = database_run.index("supabase stop") or raise "database cleanup missing"
 trap_index = database_run.index("trap cleanup EXIT") or raise "cleanup trap missing"
 raise "cleanup is not installed before untrusted SQL" unless trap_index < start_index
 raise "database command ordering changed" unless cleanup_index < start_index && start_index < sql_index
+raise "Postgres preflight does not precede CLI startup" unless pull_index < tag_index && tag_index < start_index
 raise "candidate SQL is not copied into the disposable container" unless database_run.include?("docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests")
 
 result_run = run_scripts(jobs.fetch("result")).join("\n")
@@ -476,8 +505,10 @@ raise "Deno input discovery does not fail closed" unless functions_run.include?(
 
 database_run = run_scripts(jobs.fetch("database")).join("\n")
 digest_index = database_run.index("expected_postgres_digest=") or raise "trusted Postgres digest missing"
+start_index = database_run.index("supabase db start") or raise "database start missing"
+running_index = database_run.index("running_image_id=") or raise "running Postgres image verification missing"
 copy_index = database_run.index("docker cp supabase/tests/.") or raise "SQL copy missing"
-raise "Postgres digest is not verified before SQL execution" unless digest_index < copy_index
+raise "Postgres digest is not pinned before startup and verified before SQL execution" unless digest_index < start_index && start_index < running_index && running_index < copy_index
 raise "running Postgres RepoDigests are not inspected" unless database_run.include?("{{range .RepoDigests}}")
 raise "SQL discovery is not recursive and NUL-safe" unless database_run.include?('find /tmp/underbark-tests -type f -name "*.sql" -print0 | LC_ALL=C sort -z')
 raise "SQL discovery does not fail closed" unless database_run.include?("test -s /tmp/underbark-sql-files")
@@ -550,7 +581,7 @@ expect_job_contains() {
 
 expect_job_contains classify 'timeout-minutes: 10' "must bound classification to 10 minutes"
 expect_job_contains functions 'timeout-minutes: 45' "must bound image pull, container setup, serial Deno commands, and cleanup"
-expect_job_contains database 'timeout-minutes: 40' "must bound database start, SQL, and cleanup"
+expect_job_contains database 'timeout-minutes: 50' "must bound immutable image preflight, database start, SQL, and cleanup"
 expect_job_contains apple 'timeout-minutes: 65' "must contain the 60-minute Apple polling window"
 expect_job_contains result 'timeout-minutes: 10' "must bound final aggregation"
 
@@ -578,6 +609,9 @@ expect_job_contains database 'version: 2.113.0' "must pin Supabase CLI 2.113.0"
 expect_job_contains database 'trap cleanup EXIT' "must install same-step database cleanup"
 expect_job_contains database 'timeout 15m supabase db start --workdir .' "must bound Postgres-only database startup"
 expect_job_contains database 'public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459' "must bind the disposable Postgres image to the trusted digest"
+expect_job_contains database 'public.ecr.aws/supabase/postgres:17.6.1.158' "must bind the Supabase CLI expected Postgres tag"
+expect_job_contains database 'docker pull "$expected_postgres_digest"' "must pull the immutable Postgres digest before CLI startup"
+expect_job_contains database 'docker tag "$preflight_image_id" "$expected_postgres_tag"' "must make the CLI tag resolve to the preflight image"
 expect_job_contains database "{{range .RepoDigests}}{{println .}}{{end}}" "must inspect the running image RepoDigests"
 expect_job_contains database 'timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c' "must bound SQL suites inside the disposable database container"
 expect_job_contains database 'docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests' "must copy candidate SQL into the disposable container without a host mount"
