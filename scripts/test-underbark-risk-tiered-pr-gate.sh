@@ -8,7 +8,7 @@ failures=0
 bash "${script_dir}/test-classify-underbark-pr.sh"
 bash "${script_dir}/test-verify-underbark-release-context.sh"
 
-if ! ruby -ryaml - "$workflow" <<'RUBY'
+if ! ruby -ryaml -rshellwords - "$workflow" <<'RUBY'
 def reject_duplicate_keys(node, path = "$")
   case node
   when Psych::Nodes::Stream, Psych::Nodes::Document, Psych::Nodes::Sequence
@@ -67,19 +67,210 @@ def serialized(job)
   YAML.dump(job)
 end
 
-%w[functions database].each do |name|
-  body = serialized(jobs.fetch(name))
-  raise "#{name} contains a GitHub token" if body.include?("github.token") || body.include?("GH_TOKEN")
-  raise "#{name} contains a secret" if body.include?("secrets")
-  raise "#{name} exposes a host workflow control file" if %w[GITHUB_ENV GITHUB_PATH GITHUB_OUTPUT].any? { |key| body.include?(key) }
+def run_scripts(job)
+  job.fetch("steps").map { |step| step["run"] }.compact
+end
+
+def logical_commands(script)
+  commands = []
+  buffer = ""
+  script.each_line do |raw_line|
+    line = raw_line.strip
+    next if line.empty? && buffer.empty?
+    buffer = buffer.empty? ? line : "#{buffer} #{line}"
+    if buffer.end_with?("\\")
+      buffer = buffer[0...-1].rstrip
+    else
+      commands << buffer unless buffer.empty?
+      buffer = ""
+    end
+  end
+  commands << buffer unless buffer.empty?
+  commands
+end
+
+def docker_invocations(commands)
+  commands.map do |command|
+    tokens = Shellwords.split(command)
+    docker_index = tokens.index("docker")
+    next unless docker_index
+    [command, tokens[docker_index + 1], tokens[(docker_index + 2)..-1] || []]
+  rescue ArgumentError => error
+    raise "cannot parse Docker command #{command.inspect}: #{error.message}"
+  end.compact
+end
+
+def option_value(args, index, name)
+  token = args[index]
+  return token.split("=", 2)[1] if token.start_with?("#{name}=")
+  args[index + 1] if token == name
+end
+
+def docker_options(args)
+  value_options = %w[
+    --entrypoint --env --env-file --ipc --mount --name --net --network
+    --cap-add --cgroupns --device --device-cgroup-rule --pid --pull
+    --security-opt --userns --uts --volume --volumes-from --workdir -e -v
+  ]
+  options = []
+  index = 0
+  while index < args.length && args[index].start_with?("-")
+    token = args[index]
+    options << token
+    if !token.include?("=") && value_options.include?(token)
+      options << args[index + 1] if args[index + 1]
+      index += 2
+    else
+      index += 1
+    end
+  end
+  options
+end
+
+def reject_unsafe_docker_options(commands)
+  docker_invocations(commands).each do |command, subcommand, args|
+    raise "Docker socket exposed in #{command}" if command.include?("/var/run/docker.sock") || command.include?("/run/docker.sock")
+
+    options = docker_options(args)
+    options.each_with_index do |token, index|
+      if token == "--mount" || token.start_with?("--mount=") ||
+          token == "--volume" || token.start_with?("--volume=")
+        raise "host mount allowed in #{command}"
+      end
+      if token == "--env" || token.start_with?("--env=") ||
+          token == "--env-file" || token.start_with?("--env-file=") ||
+          token == "-e" || token.start_with?("-e")
+        raise "host environment allowed in #{command}"
+      end
+      if token == "--privileged" || token.start_with?("--privileged=")
+        raise "privileged Docker execution allowed in #{command}"
+      end
+
+      if %w[--cap-add --device --device-cgroup-rule --mount --security-opt --volume --volumes-from].any? { |option| token == option || token.start_with?("#{option}=") }
+        raise "Docker isolation escape option allowed in #{command}"
+      end
+
+      %w[--cgroupns --pid --network --net --ipc --uts --userns].each do |option|
+        value = option_value(options, index, option)
+        raise "host namespace allowed in #{command}" if value == "host"
+      end
+
+      if %w[create run].include?(subcommand) && (token == "-v" || token.start_with?("-v"))
+        raise "short host volume allowed in #{command}"
+      end
+    end
+  end
+end
+
+def validate_candidate_boundaries(workflow)
+  jobs = workflow.fetch("jobs")
+  candidate_checkouts = jobs.values.flat_map do |job|
+    job.fetch("steps").select do |step|
+      checkout = step["uses"].to_s.start_with?("actions/checkout@")
+      inputs = step.fetch("with", {})
+      candidate = inputs["path"] == ".candidate" ||
+        inputs["repository"].to_s.include?("pull_request.head.repo.full_name") ||
+        inputs["ref"].to_s.include?("pull_request.head.sha")
+      checkout && candidate
+    end
+  end
+  raise "candidate checkout coverage missing" if candidate_checkouts.empty?
+  candidate_checkouts.each do |step|
+    raise "candidate checkout persists credentials" unless step.fetch("with")["persist-credentials"] == false
+  end
+
+  %w[functions database].each do |name|
+    body = serialized(jobs.fetch(name))
+    raise "#{name} contains a GitHub token" if body.include?("github.token") || body.include?("GH_TOKEN")
+    raise "#{name} contains a secret" if body.include?("secrets")
+    raise "#{name} exposes a host workflow control file" if %w[GITHUB_ENV GITHUB_PATH GITHUB_OUTPUT].any? { |key| body.include?(key) }
+  end
+
+  all_commands = jobs.values.flat_map { |job| run_scripts(job).flat_map { |script| logical_commands(script) } }
+  candidate_commands = %w[functions database].flat_map do |name|
+    run_scripts(jobs.fetch(name)).flat_map { |script| logical_commands(script) }
+  end
+  reject_unsafe_docker_options(candidate_commands)
+
+  deno_commands = all_commands.select { |command| command =~ /\bdeno (fmt|check|test)\b/ }
+  raise "expected exactly three candidate Deno commands" unless deno_commands.length == 3
+  deno_commands.each do |command|
+    unless command =~ /\Atimeout 10m docker exec "\$container" deno (fmt|check|test)\b/
+      raise "candidate Deno escaped the intended container: #{command}"
+    end
+  end
+
+  psql_commands = all_commands.select { |command| command =~ /\bpsql(?:\s|$)/ }
+  raise "expected exactly one psql command" unless psql_commands.length == 1
+  unless psql_commands.first =~ /\Atimeout 10m docker exec supabase_db_underbark bash -euo pipefail -c .*\bpsql\b/
+    raise "psql escaped the intended database container: #{psql_commands.first}"
+  end
+end
+
+def expect_boundary_rejection(label, workflow)
+  validate_candidate_boundaries(workflow)
+rescue RuntimeError
+  return
+else
+  raise "negative boundary fixture was accepted: #{label}"
+end
+
+validate_candidate_boundaries(workflow)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\ndeno test supabase/functions\n" }
+expect_boundary_rejection("host Deno", fixture)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+deno_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("deno fmt") }
+deno_step["run"].sub!('docker exec "$container" deno fmt', 'docker exec wrong-container deno fmt')
+expect_boundary_rejection("wrong Deno container", fixture)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\npsql postgresql://localhost/postgres -c 'select 1'\n" }
+expect_boundary_rejection("host psql", fixture)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+database_step = fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"].to_s.include?("psql") }
+database_step["run"].sub!("docker exec supabase_db_underbark bash", "docker exec wrong-container bash")
+expect_boundary_rejection("wrong psql container", fixture)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+checkout = fixture.fetch("jobs").values.flat_map { |job| job.fetch("steps") }.find { |step| step.fetch("with", {})["path"] == ".candidate" }
+checkout.fetch("with").delete("persist-credentials")
+expect_boundary_rejection("persisted checkout credentials", fixture)
+
+unsafe_docker_fixtures = {
+  "mount" => "docker run --mount type=bind,src=/tmp,dst=/work alpine true",
+  "multiline short volume" => "docker run \\\n  -v /tmp:/work alpine true",
+  "short environment" => "docker run -e TOKEN=value alpine true",
+  "attached short environment" => "docker run -eTOKEN=value alpine true",
+  "environment" => "docker run --env TOKEN=value alpine true",
+  "environment file" => "docker run --env-file /tmp/env alpine true",
+  "Docker socket" => "docker run -v /var/run/docker.sock:/var/run/docker.sock alpine true",
+  "privileged" => "docker run --privileged alpine true",
+  "host pid" => "docker run --pid host alpine true",
+  "host network" => "docker run --network=host alpine true",
+  "short host network" => "docker run --net host alpine true",
+  "host IPC" => "docker run --ipc=host alpine true",
+  "host UTS" => "docker run --uts host alpine true",
+  "host user namespace" => "docker run --userns=host alpine true",
+  "host cgroup namespace" => "docker run --cgroupns host alpine true",
+  "capability addition" => "docker run --cap-add SYS_ADMIN alpine true",
+  "device access" => "docker run --device=/dev/null alpine true",
+  "security override" => "docker run --security-opt seccomp=unconfined alpine true",
+  "inherited volumes" => "docker run --volumes-from trusted alpine true",
+}
+unsafe_docker_fixtures.each do |label, command|
+  fixture = Marshal.load(Marshal.dump(workflow))
+  fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\n#{command}\n" }
+  expect_boundary_rejection(label, fixture)
 end
 
 token_jobs = jobs.select { |_name, job| serialized(job).include?("github.token") }.keys
 raise "token job boundary changed" unless token_jobs == %w[classify apple result]
-raise "candidate Deno escaped its runner" if serialized(jobs.fetch("classify")).include?("deno test") || serialized(jobs.fetch("result")).include?("deno test")
-raise "candidate SQL escaped its runner" if serialized(jobs.fetch("classify")).include?("psql ") || serialized(jobs.fetch("result")).include?("psql ")
 
-database_run = jobs.fetch("database").fetch("steps").map { |step| step["run"] }.compact.join("\n")
+database_run = run_scripts(jobs.fetch("database")).join("\n")
 start_index = database_run.index("supabase start") or raise "database start missing"
 sql_index = database_run.index("psql ") or raise "SQL suites missing"
 cleanup_index = database_run.index("supabase stop") or raise "database cleanup missing"
@@ -87,10 +278,8 @@ trap_index = database_run.index("trap cleanup EXIT") or raise "cleanup trap miss
 raise "cleanup is not installed before untrusted SQL" unless trap_index < start_index
 raise "database command ordering changed" unless cleanup_index < start_index && start_index < sql_index
 raise "candidate SQL is not copied into the disposable container" unless database_run.include?("docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests")
-raise "candidate SQL runs on the host" unless database_run.include?("docker exec supabase_db_underbark bash")
-raise "host shell reads candidate SQL" if database_run.include?("< \"$suite\"")
 
-result_run = jobs.fetch("result").fetch("steps").map { |step| step["run"] }.compact.join("\n")
+result_run = run_scripts(jobs.fetch("result")).join("\n")
 raise "lane aggregation missing" unless result_run.include?("require_lane_result")
 raise "terminal tuple read missing" unless result_run.include?("pulls/${PR_NUMBER}")
 local_ancestry_index = result_run.index("verify-underbark-ancestry-sync.sh") or raise "local ancestry validation missing"
@@ -102,13 +291,9 @@ raise "local ancestry work occurs after terminal reads" unless local_ancestry_in
 raise "terminal read ordering changed" unless final_tuple_index < final_main_index && final_main_index < final_release_index && final_release_index < success_index
 raise "terminal success is not the final operation" unless result_run.lines.reject { |line| line.strip.empty? }.last.include?("Final exact pull request tuple")
 
-functions_run = jobs.fetch("functions").fetch("steps").map { |step| step["run"] }.compact.join("\n")
+functions_run = run_scripts(jobs.fetch("functions")).join("\n")
 raise "Deno container digest missing" unless functions_run.include?("denoland/deno:2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463")
 raise "candidate source is not copied into isolation" unless functions_run.include?("docker cp supabase/.")
-raise "candidate Deno does not execute in isolation" unless functions_run.scan("docker exec").length >= 3
-raise "a Deno command escaped the isolation container" unless functions_run.lines.grep(/deno (fmt|check|test)/).all? { |line| line.include?("docker exec") }
-raise "candidate container receives host environment" if functions_run.include?("--env") || functions_run.include?("--env-file")
-raise "candidate container has a host write mount" if functions_run.include?("--volume") || functions_run.match?(/docker (create|run).*\s-v\s/)
 RUBY
 then
   echo "FAIL: parsed workflow trust-boundary assertions failed" >&2
