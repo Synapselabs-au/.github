@@ -120,7 +120,7 @@ EXPECTED_DATABASE_RUN = <<~'BASH'
   }
   trap cleanup EXIT
 
-  timeout 15m supabase start --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+  timeout 15m supabase db start --workdir .
   timeout 1m docker exec supabase_db_underbark mkdir -p /tmp/underbark-tests
   timeout 1m docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests
   timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c 'for suite in /tmp/underbark-tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done'
@@ -381,7 +381,7 @@ token_jobs = jobs.select { |_name, job| serialized(job).include?("github.token")
 raise "token job boundary changed" unless token_jobs == %w[classify apple result]
 
 database_run = run_scripts(jobs.fetch("database")).join("\n")
-start_index = database_run.index("supabase start") or raise "database start missing"
+start_index = database_run.index("supabase db start") or raise "database start missing"
 sql_index = database_run.index("psql ") or raise "SQL suites missing"
 cleanup_index = database_run.index("supabase stop") or raise "database cleanup missing"
 trap_index = database_run.index("trap cleanup EXIT") or raise "cleanup trap missing"
@@ -494,7 +494,7 @@ expect_job_contains functions 'timeout 10m docker exec "$container" deno test --
 expect_job_contains database 'supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1' "must pin Supabase setup"
 expect_job_contains database 'version: 2.113.0' "must pin Supabase CLI 2.113.0"
 expect_job_contains database 'trap cleanup EXIT' "must install same-step database cleanup"
-expect_job_contains database 'timeout 15m supabase start --workdir .' "must bound disposable database startup"
+expect_job_contains database 'timeout 15m supabase db start --workdir .' "must bound Postgres-only database startup"
 expect_job_contains database 'timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c' "must bound SQL suites inside the disposable database container"
 expect_job_contains database 'docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests' "must copy candidate SQL into the disposable container without a host mount"
 expect_job_contains database 'docker exec supabase_db_underbark bash -euo pipefail -c' "must process candidate SQL only inside the disposable database container"

@@ -269,7 +269,7 @@ jobs:
           }
           trap cleanup EXIT
 
-          timeout 15m supabase start --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          timeout 15m supabase db start --workdir .
           timeout 1m docker exec supabase_db_underbark mkdir -p /tmp/underbark-tests
           timeout 1m docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests
           timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c 'for suite in /tmp/underbark-tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done'
