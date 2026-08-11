@@ -71,6 +71,34 @@ expect_step_token() {
   fi
 }
 
+expect_no_default_candidate_directory() {
+  if awk '
+    function indentation(line) {
+      match(line, /[^ ]/)
+      return RSTART - 1
+    }
+    /^[[:space:]]*defaults:[[:space:]]*($|#)/ {
+      defaults_indent = indentation($0)
+      in_defaults = 1
+      next
+    }
+    in_defaults && $0 !~ /^[[:space:]]*($|#)/ && indentation($0) <= defaults_indent {
+      in_defaults = 0
+    }
+    in_defaults {
+      normalized = $0
+      gsub(/[[:space:]\"\047]/, "", normalized)
+      if (normalized ~ /^working-directory:(\.\/)?\.candidate(\/\.)*\/?(#.*)?$/) {
+        bad = 1
+      }
+    }
+    END { exit !bad }
+  ' "$workflow"; then
+    echo "FAIL: workflow must not set a defaults.run candidate working directory" >&2
+    failures=$((failures + 1))
+  fi
+}
+
 expect_excludes "cache:" "must not enable a Deno or Actions cache"
 expect_excludes "actions/cache" "must not use an Actions cache"
 
@@ -119,7 +147,10 @@ expect_excludes "matrix:" "must not use a matrix"
 expect_excludes "deployment" "must not deploy"
 expect_excludes ".candidate/scripts/" "must not execute candidate scripts"
 expect_excludes ".candidate/scripts" "must not execute candidate scripts through an alternate path"
+expect_excludes_regex '(^|[^[:alnum:]_])\.candidate(/[^/[:space:]]+/\.\.)*(/\.)*/scripts([/[:space:]]|$)' "must not execute normalized candidate scripts"
 expect_excludes "macos-" "must not allocate a macOS runner"
+
+expect_no_default_candidate_directory
 
 for candidate_step in "Verify Supabase functions" "Start disposable Supabase database" "Run Supabase SQL suites" "Stop disposable Supabase database"; do
   expect_step_excludes "$candidate_step" "GH_TOKEN:" "must keep ${candidate_step} free of GH_TOKEN"
@@ -137,7 +168,12 @@ if awk '
     candidate_script = 0
   }
   /^      - name: / { finish_step() }
-  index($0, "working-directory: .candidate") || index($0, "working-directory: ./.candidate") || index($0, "working-directory: \".candidate\"") || index($0, "working-directory: \"./.candidate\"") || index($0, "working-directory: '\''.candidate'\''") || index($0, "working-directory: '\''./.candidate'\''") { candidate_directory = 1 }
+  {
+    candidate_line = $0
+    gsub(/\"/, "", candidate_line)
+    gsub(sprintf("%c", 39), "", candidate_line)
+  }
+  index(candidate_line, "working-directory: .candidate") || index(candidate_line, "working-directory: .candidate/.") || index(candidate_line, "working-directory: ./.candidate") || index(candidate_line, "working-directory: ./.candidate/.") { candidate_directory = 1 }
   index($0, "scripts/") { candidate_script = 1 }
   END { finish_step(); exit !bad }
 ' "$workflow"; then
