@@ -6,6 +6,8 @@ classifier="${script_dir}/classify-underbark-pr.sh"
 workflow="${script_dir}/../.github/workflows/underbark-risk-tiered-pr-gate.yml"
 failures=0
 
+bash "${script_dir}/test-verify-underbark-ancestry-sync.sh"
+
 expect_workflow_contains() {
   pattern="$1"
   description="$2"
@@ -99,6 +101,21 @@ expect_workflow_contains "github.repository == 'Synapselabs-au/Underbark'" "must
 expect_workflow_contains "runs-on: ubuntu-latest" "must use the cheap Linux runner"
 expect_workflow_contains 'ref: ${{ github.workflow_sha }}' "must bind trusted code to the workflow source SHA"
 expect_workflow_contains "git -C .candidate diff --name-status --no-renames -z" "must classify the exact diff"
+expect_workflow_contains 'git -C .candidate diff --quiet "${LIVE_BASE_SHA}...${LIVE_HEAD}"' "must isolate the empty-diff ancestry path"
+expect_workflow_contains 'verify-underbark-ancestry-sync.sh' "must verify exact ancestry-sync parents and tree"
+expect_workflow_contains 'git/ref/heads/main' "must bind the ancestry sync to current main"
+expect_workflow_contains 'EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}' "must inspect ancestry-sync authorship"
+expect_workflow_contains 'EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}' "must bind ancestry syncs to the protected repository"
+expect_workflow_contains 'release-in-flight' "must require the active release reservation"
+expect_workflow_contains '.total_count' "must count every active release reservation"
+expect_workflow_contains '.merged_at // empty' "must require a merged release marker"
+expect_workflow_contains 'require_current_main "$LIVE_MAIN_SHA"' "must revalidate main before ancestry success"
+expect_workflow_contains 'merge-base --is-ancestor' "must bind the release marker to the live base ancestry"
+release_context_check_count="$(grep -c '^[[:space:]]*require_release_context$' "$workflow")"
+if [ "$release_context_check_count" -lt 2 ]; then
+  echo "FAIL: workflow must verify release context before and after ancestry inspection" >&2
+  failures=$((failures + 1))
+fi
 expect_workflow_contains 'APPLE_APP_ID: "117084"' "must pin the Apple GitHub App"
 expect_workflow_contains "APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS" "must pin the Apple check name"
 expect_workflow_contains "require_current_tuple" "must reject stale pull request state"

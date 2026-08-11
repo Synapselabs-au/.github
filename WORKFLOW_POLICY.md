@@ -63,6 +63,18 @@ workflow that never starts can remain pending forever. Put conservative
 change classification inside an always-created stable job, then use a cheap
 validation lane for documentation-only changes.
 
+An empty pull request diff remains fail-closed unless a repository's release
+procedure requires a pure ancestry sync. That exception must verify that the
+head has exactly two parents, the live protected base is the first parent,
+the current release branch is the second parent, and the head tree is byte-
+identical to the live base tree. An ordinary empty commit, reversed parents,
+an additional parent, linear history, or any tree change must fail. The pull
+request must be App-authored from the protected repository and covered by the
+single active, merged `release-in-flight` reservation. Revalidate the live
+base, current release branch, and release reservation immediately before
+publishing success. If the release branch moves after success, reopen or
+update the ancestry pull request so GitHub creates fresh required evidence.
+
 Draft pull requests must not satisfy a required check through skipped jobs. A
 ruleset-required workflow may retain exact-head evidence while the pull request
 is draft because GitHub does not rerun it on `ready_for_review`; draft state
