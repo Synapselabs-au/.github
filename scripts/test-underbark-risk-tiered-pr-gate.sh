@@ -131,7 +131,7 @@ expect_step_token "Classify trusted verification" "must scope GH_TOKEN to truste
 expect_step_token "Poll exact-head Apple verification" "must scope GH_TOKEN to Apple polling"
 expect_step_token "Validate final live tuple" "must scope GH_TOKEN to final tuple validation"
 token_count="$(grep -c '^[[:space:]]*GH_TOKEN:' "$workflow" || true)"
-github_token_count="$(grep -cF '\${{ github.token }}' "$workflow" || true)"
+github_token_count="$(grep -cF '${{ github.token }}' "$workflow" || true)"
 github_token_env_count="$(grep -cF 'GITHUB_TOKEN' "$workflow" || true)"
 if [ "$token_count" -ne 3 ] || [ "$github_token_count" -ne 3 ] || [ "$github_token_env_count" -ne 0 ]; then
   echo "FAIL: workflow must scope all GitHub tokens only to classification, Apple polling, and final tuple validation" >&2

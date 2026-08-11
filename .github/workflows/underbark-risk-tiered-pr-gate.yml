@@ -36,10 +36,9 @@ jobs:
           path: .candidate
           persist-credentials: false
 
-      - name: Enforce risk-tiered verification
+      - name: Classify trusted verification
+        id: classify
         env:
-          APPLE_APP_ID: "117084"
-          APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS
           EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -50,6 +49,7 @@ jobs:
           set -euo pipefail
 
           bash .gate/scripts/test-classify-underbark-pr.sh
+          bash .gate/scripts/test-underbark-risk-tiered-pr-gate.sh
 
           read_live_tuple() {
             read -r LIVE_HEAD LIVE_BASE_REF LIVE_STATE < <(gh api \
@@ -137,34 +137,123 @@ jobs:
             require_current_tuple
             require_current_main "$LIVE_MAIN_SHA"
             require_release_context
+            {
+              echo "classification=static"
+              echo "backend_functions=0"
+              echo "backend_database=0"
+              echo "ancestry_sync=1"
+              echo "ancestry_main_sha=$LIVE_MAIN_SHA"
+            } >>"$GITHUB_OUTPUT"
             echo "Tree-identical release ancestry sync verified. Apple compute is not required."
             exit 0
           fi
 
-          classification="$(
+          classification_record="$(
             git -C .candidate diff --name-status --no-renames -z \
               "${LIVE_BASE_SHA}...${LIVE_HEAD}" \
               | .gate/scripts/classify-underbark-pr.sh
           )"
-          echo "Trusted verification classification: ${classification}."
+          IFS=$'\t' read -r classification backend_functions backend_database \
+            <<<"$classification_record"
 
           case "$classification" in
-            static)
-              require_current_tuple
-              echo "Static verification is complete. Apple compute is not required."
-              exit 0
-              ;;
-            blocked)
-              echo "The diff contains an unclassified path. Update the trusted gate before merge." >&2
-              exit 1
-              ;;
-            apple)
-              ;;
+            static|backend|apple|apple-backend|blocked) ;;
             *)
               echo "Unexpected verification classification: ${classification}." >&2
               exit 1
               ;;
           esac
+          case "$backend_functions:$backend_database" in
+            0:0|0:1|1:0|1:1) ;;
+            *)
+              echo "Invalid backend verification flags." >&2
+              exit 1
+              ;;
+          esac
+          if [ "$classification_record" != "$classification"$'\t'"$backend_functions"$'\t'"$backend_database" ]; then
+            echo "Invalid trusted classifier output." >&2
+            exit 1
+          fi
+          if [ "$classification" = "blocked" ]; then
+            echo "The diff contains an unclassified path. Update the trusted gate before merge." >&2
+            exit 1
+          fi
+
+          {
+            echo "classification=$classification"
+            echo "backend_functions=$backend_functions"
+            echo "backend_database=$backend_database"
+            echo "ancestry_sync=0"
+            echo "ancestry_main_sha="
+          } >>"$GITHUB_OUTPUT"
+          echo "Trusted verification classification: $classification."
+
+      - name: Set up Deno
+        if: ${{ steps.classify.outputs.backend_functions == '1' }}
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.9.5
+
+      - name: Verify Supabase functions
+        if: ${{ steps.classify.outputs.backend_functions == '1' }}
+        working-directory: .candidate
+        run: |
+          set -euo pipefail
+          timeout 10m deno fmt --check supabase/functions
+          timeout 10m deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
+          timeout 10m deno test --config supabase/functions/deno.json supabase/functions
+
+      - name: Set up Supabase CLI
+        if: ${{ steps.classify.outputs.backend_database == '1' }}
+        uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1
+        with:
+          version: 2.113.0
+
+      - name: Start disposable Supabase database
+        if: ${{ steps.classify.outputs.backend_database == '1' }}
+        working-directory: .candidate
+        run: |
+          set -euo pipefail
+          timeout 15m supabase start --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Run Supabase SQL suites
+        if: ${{ steps.classify.outputs.backend_database == '1' }}
+        working-directory: .candidate
+        run: |
+          set -euo pipefail
+          timeout 10m bash -euo pipefail -c 'for suite in supabase/tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done'
+
+      - name: Poll exact-head Apple verification
+        if: ${{ steps.classify.outputs.classification == 'apple' || steps.classify.outputs.classification == 'apple-backend' }}
+        env:
+          APPLE_APP_ID: "117084"
+          APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          require_current_tuple() {
+            read -r live_head live_base_ref live_state < <(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv')
+            live_base_sha="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${live_base_ref}" \
+              --jq '.object.sha')"
+            live_merge_base="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/compare/${live_base_sha}...${live_head}" \
+              --jq '.merge_base_commit.sha')"
+            if [[ "$live_head" != "$EVENT_HEAD" \
+              || "$live_base_ref" != "$EVENT_BASE_REF" \
+              || "$live_state" != "open" \
+              || "$live_merge_base" != "$live_base_sha" ]]; then
+              echo "Refusing stale, closed, wrong-base, or behind pull request state." >&2
+              exit 1
+            fi
+            LIVE_HEAD="$live_head"
+          }
 
           for attempt in $(seq 1 120); do
             require_current_tuple
@@ -201,3 +290,75 @@ jobs:
 
           echo "Timed out waiting for exact-head Apple verification." >&2
           exit 1
+
+      - name: Validate final live tuple
+        env:
+          ANCESTRY_MAIN_SHA: ${{ steps.classify.outputs.ancestry_main_sha }}
+          ANCESTRY_SYNC: ${{ steps.classify.outputs.ancestry_sync }}
+          EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          read -r live_head live_base_ref live_state < <(gh api \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '[.head.sha, .base.ref, .state] | @tsv')
+          live_base_sha="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/git/ref/heads/${live_base_ref}" \
+            --jq '.object.sha')"
+          live_merge_base="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/compare/${live_base_sha}...${live_head}" \
+            --jq '.merge_base_commit.sha')"
+          if [[ "$live_head" != "$EVENT_HEAD" \
+            || "$live_base_ref" != "$EVENT_BASE_REF" \
+            || "$live_state" != "open" \
+            || "$live_merge_base" != "$live_base_sha" ]]; then
+            echo "Refusing success after pull request state changed." >&2
+            exit 1
+          fi
+
+          if [ "$ANCESTRY_SYNC" = "1" ]; then
+            if [ "$EVENT_AUTHOR_TYPE" != "Bot" \
+              || "$EVENT_HEAD_REPO" != "$GITHUB_REPOSITORY" \
+              || [ "$live_base_ref" != "dev" ]; then
+              echo "Ancestry sync context changed." >&2
+              exit 1
+            fi
+            current_main="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha')"
+            if [ "$current_main" != "$ANCESTRY_MAIN_SHA" ]; then
+              echo "Refusing ancestry success after main moved." >&2
+              exit 1
+            fi
+            release_locks="$(gh api -X GET search/issues \
+              -f "q=repo:${GITHUB_REPOSITORY} is:pr label:release-in-flight")"
+            if [ "$(jq -r '.total_count' <<<"$release_locks")" -ne 1 ]; then
+              echo "Expected exactly one release-in-flight pull request." >&2
+              exit 1
+            fi
+            release_lock_number="$(jq -r '.items[0].number' <<<"$release_locks")"
+            release_pr="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${release_lock_number}")"
+            release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$release_pr")"
+            if [ "$(jq -r '.merged_at // empty' <<<"$release_pr")" = "" \
+              || [ "$(jq -r '.base.ref' <<<"$release_pr")" != "dev" \
+              || [ -z "$release_merge_sha" ]; then
+              echo "The release marker changed before final validation." >&2
+              exit 1
+            fi
+            git -C .candidate cat-file -e "${release_merge_sha}^{commit}"
+            git -C .candidate merge-base --is-ancestor \
+              "$release_merge_sha" "$live_base_sha"
+          fi
+
+          echo "Final exact pull request tuple verified."
+
+      - name: Stop disposable Supabase database
+        if: ${{ always() && steps.classify.outputs.backend_database == '1' }}
+        working-directory: .candidate
+        run: supabase stop --workdir . --no-backup
