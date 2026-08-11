@@ -73,6 +73,8 @@ expect_classification static "legacy classifier deletion" \
 expect_classification apple "RecovrKit logic" M RecovrKit/Sources/RecovrKit/Scoring/Recovery.swift
 expect_classification apple "iPhone source" A Recovr/TodayView.swift
 expect_classification apple "Watch source" M RecovrWatch/RecoveryView.swift
+expect_classification apple "Markdown inside an iPhone target" M Recovr/RuntimeContent.md
+expect_classification apple "Markdown inside a Watch target" M RecovrWatch/RuntimeContent.md
 expect_classification apple "project configuration" M project.yml
 expect_classification apple "signing script" M scripts/verify-signing.sh
 expect_classification apple "mixed docs and Apple" M docs/README.md M Recovr/App.swift
@@ -99,7 +101,15 @@ expect_workflow_contains "git -C .candidate diff --name-status --no-renames -z" 
 expect_workflow_contains 'APPLE_APP_ID: "117084"' "must pin the Apple GitHub App"
 expect_workflow_contains "APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS" "must pin the Apple check name"
 expect_workflow_contains "require_current_tuple" "must reject stale pull request state"
+tuple_check_count="$(grep -c '^[[:space:]]*require_current_tuple$' "$workflow")"
+if [ "$tuple_check_count" -lt 3 ]; then
+  echo "FAIL: workflow must revalidate the live tuple before every success path and Apple poll" >&2
+  failures=$((failures + 1))
+fi
+expect_workflow_contains 'any(.pull_requests[]?; .number == $pr_number)' "must bind Apple evidence to this pull request"
+expect_workflow_contains "sort_by(.id)" "must select the newest Apple check deterministically"
 expect_workflow_contains "cancel-in-progress:" "must cancel superseded attempts"
+expect_workflow_excludes "types: [" "must not claim unsupported ruleset-workflow event filters"
 expect_workflow_excludes "macos-" "must not allocate a GitHub-hosted macOS runner"
 expect_workflow_excludes "xcodebuild" "must not run Xcode"
 expect_workflow_excludes ".candidate/scripts/" "must not execute candidate scripts"

@@ -7,8 +7,6 @@ permissions:
 
 on:
   pull_request:
-    branches: [dev]
-    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited, closed]
 
 concurrency:
   group: underbark-pr-gate-${{ github.event.pull_request.number }}
@@ -17,7 +15,6 @@ concurrency:
 jobs:
   result:
     name: Underbark PR Gate result
-    if: ${{ github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 65
     steps:
@@ -88,6 +85,7 @@ jobs:
 
           case "$classification" in
             static)
+              require_current_tuple
               echo "Static verification is complete. Apple compute is not required."
               exit 0
               ;;
@@ -104,14 +102,18 @@ jobs:
           esac
 
           for attempt in $(seq 1 120); do
+            require_current_tuple
             check_json="$(gh api \
               -H "Accept: application/vnd.github+json" \
               "repos/${GITHUB_REPOSITORY}/commits/${LIVE_HEAD}/check-runs?per_page=100")"
             check="$(jq -c \
               --arg name "$APPLE_CHECK_NAME" \
               --argjson app_id "$APPLE_APP_ID" \
-              '[.check_runs[] | select(.name == $name and .app.id == $app_id)]
-               | sort_by(.started_at // .created_at)
+              --argjson pr_number "$PR_NUMBER" \
+              '[.check_runs[]
+                | select(.name == $name and .app.id == $app_id)
+                | select(any(.pull_requests[]?; .number == $pr_number))]
+               | sort_by(.id)
                | last // empty' <<<"$check_json")"
 
             if [ -n "$check" ]; then

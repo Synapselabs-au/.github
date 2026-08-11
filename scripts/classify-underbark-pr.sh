@@ -24,13 +24,6 @@ while IFS= read -r -d '' status; do
   esac
 
   case "$path" in
-    *.md|.github/pull_request_template.md)
-      ;;
-    .github/workflows/ci.yml|.github/workflows/pr-source-policy.yml|scripts/classify-ci-changes.sh|scripts/verify-ci-classifier.sh|scripts/verify-ci-workflow.sh)
-      if [ "$status" != "D" ]; then
-        blocked=1
-      fi
-      ;;
     Recovr/*|RecovrKit/*|RecovrStoreKitTests/*|RecovrTests/*|RecovrUITests/*|RecovrWatch/*|RecovrWatchUITests/*|RecovrWatchWidgets/*|RecovrWidgets/*|Shared/*|Config/*|ci_scripts/*)
       apple=1
       ;;
@@ -39,6 +32,13 @@ while IFS= read -r -d '' status; do
       ;;
     scripts/archive-app.sh|scripts/render-brand-assets.sh|scripts/verify-archive.sh|scripts/verify-brand.sh|scripts/verify-distribution-bundles.sh|scripts/verify-ipa.sh|scripts/verify-pr-source-policy-tests.sh|scripts/verify-pr-source-policy.sh|scripts/verify-release-record.sh|scripts/verify-signing.sh|scripts/verify-storekit-catalogue.sh|scripts/verify-version-change-policy-tests.sh|scripts/verify-version-change-policy.sh|scripts/verify-version.sh|scripts/verify-xcode-cloud-config.sh|scripts/verify-xcode-cloud-prebuild-tests.sh|scripts/version.sh)
       apple=1
+      ;;
+    *.md|.github/pull_request_template.md)
+      ;;
+    .github/workflows/ci.yml|.github/workflows/pr-source-policy.yml|scripts/classify-ci-changes.sh|scripts/verify-ci-classifier.sh|scripts/verify-ci-workflow.sh)
+      if [ "$status" != "D" ]; then
+        blocked=1
+      fi
       ;;
     *)
       blocked=1
