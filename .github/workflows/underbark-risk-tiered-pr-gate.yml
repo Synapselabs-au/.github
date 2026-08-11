@@ -1,9 +1,6 @@
 name: Underbark PR Gate
 
-permissions:
-  contents: read
-  pull-requests: read
-  checks: read
+permissions: {}
 
 on:
   pull_request:
@@ -16,6 +13,9 @@ jobs:
   classify:
     name: Classify trusted verification
     if: ${{ github.repository == 'Synapselabs-au/Underbark' }}
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -33,7 +33,7 @@ jobs:
           path: .gate
           persist-credentials: false
 
-      - name: Check out candidate without credentials
+      - name: Check out candidate without persisted credentials
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -184,10 +184,12 @@ jobs:
     name: Verify backend functions
     needs: classify
     if: ${{ needs.classify.result == 'success' && needs.classify.outputs.backend_functions == '1' }}
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
-      - name: Check out candidate without credentials
+      - name: Check out candidate without persisted credentials
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -195,27 +197,49 @@ jobs:
           path: .candidate
           persist-credentials: false
 
-      - name: Set up Deno
-        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        with:
-          deno-version: v2.9.5
-
-      - name: Verify Supabase functions
+      - name: Verify isolated Supabase functions
         working-directory: .candidate
         run: |
           set -euo pipefail
-          timeout 10m deno fmt --check supabase/functions
-          timeout 10m deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
-          timeout 10m deno test --config supabase/functions/deno.json supabase/functions
+
+          container="underbark-deno-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          image="denoland/deno:2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463"
+          cleanup() {
+            original_status="$?"
+            trap - EXIT
+            cleanup_status=0
+            timeout 2m docker rm -f "$container" >/dev/null 2>&1 || cleanup_status="$?"
+            if [[ "$original_status" -ne 0 ]]; then
+              exit "$original_status"
+            fi
+            exit "$cleanup_status"
+          }
+          trap cleanup EXIT
+
+          timeout 5m docker pull "$image"
+          timeout 1m docker create \
+            --pull never \
+            --name "$container" \
+            --network bridge \
+            --workdir /workspace \
+            "$image" \
+            eval 'setInterval(() => {}, 3600000)'
+          timeout 1m docker start "$container" >/dev/null
+          timeout 1m docker cp supabase/. "$container:/workspace/supabase"
+          timeout 10m docker exec "$container" deno fmt --check supabase/functions
+          timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
+          timeout 10m docker exec "$container" deno test --config supabase/functions/deno.json supabase/functions
 
   database:
     name: Verify backend database
     needs: classify
     if: ${{ needs.classify.result == 'success' && needs.classify.outputs.backend_database == '1' }}
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - name: Check out candidate without credentials
+      - name: Check out candidate without persisted credentials
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -246,12 +270,18 @@ jobs:
           trap cleanup EXIT
 
           timeout 15m supabase start --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
-          timeout 10m bash -euo pipefail -c 'for suite in supabase/tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done'
+          timeout 1m docker exec supabase_db_underbark mkdir -p /tmp/underbark-tests
+          timeout 1m docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests
+          timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c 'for suite in /tmp/underbark-tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done'
 
   apple:
     name: Verify exact-head Apple result
     needs: classify
     if: ${{ needs.classify.result == 'success' && (needs.classify.outputs.classification == 'apple' || needs.classify.outputs.classification == 'apple-backend') }}
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 65
     steps:
@@ -326,6 +356,9 @@ jobs:
     name: Underbark PR Gate result
     if: ${{ always() && github.repository == 'Synapselabs-au/Underbark' }}
     needs: [classify, functions, database, apple]
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -337,7 +370,7 @@ jobs:
           path: .gate
           persist-credentials: false
 
-      - name: Check out candidate without credentials
+      - name: Check out candidate without persisted credentials
         if: ${{ needs.classify.outputs.ancestry_sync == '1' }}
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -393,52 +426,97 @@ jobs:
             require_lane_result 0 "$APPLE_RESULT" "Apple"
           fi
 
-          read -r live_head live_base_ref live_state < <(gh api \
+          if [[ "$ANCESTRY_SYNC" == "1" ]]; then
+            read -r inspected_head inspected_base_ref inspected_state < <(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv')
+            inspected_base_sha="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${inspected_base_ref}" \
+              --jq '.object.sha')"
+            inspected_merge_base="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/compare/${inspected_base_sha}...${inspected_head}" \
+              --jq '.merge_base_commit.sha')"
+            if [[ "$inspected_head" != "$EVENT_HEAD" \
+              || "$inspected_base_ref" != "$EVENT_BASE_REF" \
+              || "$inspected_state" != "open" \
+              || "$inspected_merge_base" != "$inspected_base_sha" ]]; then
+              echo "Refusing stale ancestry inputs." >&2
+              exit 1
+            fi
+            inspected_main="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha')"
+            if [[ "$inspected_main" != "$ANCESTRY_MAIN_SHA" ]]; then
+              echo "Refusing ancestry success after main moved." >&2
+              exit 1
+            fi
+            inspected_release_locks="$(gh api -X GET search/issues \
+              -f "q=repo:${GITHUB_REPOSITORY} is:pr label:release-in-flight")"
+            if [[ "$(jq -r '.total_count' <<<"$inspected_release_locks")" -ne 1 ]]; then
+              echo "Expected exactly one release-in-flight pull request." >&2
+              exit 1
+            fi
+            inspected_release_number="$(jq -r '.items[0].number' <<<"$inspected_release_locks")"
+            inspected_release_pr="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${inspected_release_number}")"
+            inspected_release_merged_at="$(jq -r '.merged_at // empty' <<<"$inspected_release_pr")"
+            inspected_release_base_ref="$(jq -r '.base.ref' <<<"$inspected_release_pr")"
+            inspected_release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$inspected_release_pr")"
+            .gate/scripts/verify-underbark-release-context.sh \
+              "$EVENT_AUTHOR_TYPE" "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
+              "$inspected_base_ref" "$inspected_release_merged_at" \
+              "$inspected_release_base_ref" "$inspected_release_merge_sha"
+            git -C .candidate cat-file -e "${inspected_release_merge_sha}^{commit}"
+            git -C .candidate merge-base --is-ancestor \
+              "$inspected_release_merge_sha" "$inspected_base_sha"
+            .gate/scripts/verify-underbark-ancestry-sync.sh \
+              .candidate "$inspected_base_sha" "$inspected_head" "$inspected_main"
+          fi
+
+          read -r final_head final_base_ref final_state < <(gh api \
             "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
             --jq '[.head.sha, .base.ref, .state] | @tsv')
-          live_base_sha="$(gh api \
-            "repos/${GITHUB_REPOSITORY}/git/ref/heads/${live_base_ref}" \
+          final_base_sha="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/git/ref/heads/${final_base_ref}" \
             --jq '.object.sha')"
-          live_merge_base="$(gh api \
-            "repos/${GITHUB_REPOSITORY}/compare/${live_base_sha}...${live_head}" \
+          final_merge_base="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/compare/${final_base_sha}...${final_head}" \
             --jq '.merge_base_commit.sha')"
-          if [[ "$live_head" != "$EVENT_HEAD" \
-            || "$live_base_ref" != "$EVENT_BASE_REF" \
-            || "$live_state" != "open" \
-            || "$live_merge_base" != "$live_base_sha" ]]; then
+          if [[ "$final_head" != "$EVENT_HEAD" \
+            || "$final_base_ref" != "$EVENT_BASE_REF" \
+            || "$final_state" != "open" \
+            || "$final_merge_base" != "$final_base_sha" ]]; then
             echo "Refusing success after pull request state changed." >&2
             exit 1
           fi
 
           if [[ "$ANCESTRY_SYNC" == "1" ]]; then
-            current_main="$(gh api \
+            final_main="$(gh api \
               "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
               --jq '.object.sha')"
-            if [[ "$current_main" != "$ANCESTRY_MAIN_SHA" ]]; then
-              echo "Refusing ancestry success after main moved." >&2
-              exit 1
-            fi
-            release_locks="$(gh api -X GET search/issues \
+            final_release_locks="$(gh api -X GET search/issues \
               -f "q=repo:${GITHUB_REPOSITORY} is:pr label:release-in-flight")"
-            if [[ "$(jq -r '.total_count' <<<"$release_locks")" -ne 1 ]]; then
-              echo "Expected exactly one release-in-flight pull request." >&2
+            if [[ "$(jq -r '.total_count' <<<"$final_release_locks")" -ne 1 ]]; then
+              echo "The final release reservation count changed." >&2
               exit 1
             fi
-            release_lock_number="$(jq -r '.items[0].number' <<<"$release_locks")"
-            release_pr="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/pulls/${release_lock_number}")"
-            release_merged_at="$(jq -r '.merged_at // empty' <<<"$release_pr")"
-            release_base_ref="$(jq -r '.base.ref' <<<"$release_pr")"
-            release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$release_pr")"
-            .gate/scripts/verify-underbark-release-context.sh \
-              "$EVENT_AUTHOR_TYPE" "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
-              "$live_base_ref" "$release_merged_at" "$release_base_ref" \
-              "$release_merge_sha"
-            git -C .candidate cat-file -e "${release_merge_sha}^{commit}"
-            git -C .candidate merge-base --is-ancestor \
-              "$release_merge_sha" "$live_base_sha"
-            .gate/scripts/verify-underbark-ancestry-sync.sh \
-              .candidate "$live_base_sha" "$live_head" "$current_main"
+            final_release_number="$(jq -r '.items[0].number' <<<"$final_release_locks")"
+            final_release_pr="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${final_release_number}")"
+            final_release_merged_at="$(jq -r '.merged_at // empty' <<<"$final_release_pr")"
+            final_release_base_ref="$(jq -r '.base.ref' <<<"$final_release_pr")"
+            final_release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$final_release_pr")"
+            if [[ "$final_head" != "$inspected_head" \
+              || "$final_base_sha" != "$inspected_base_sha" \
+              || "$final_main" != "$inspected_main" \
+              || "$final_main" != "$ANCESTRY_MAIN_SHA" \
+              || "$final_release_number" != "$inspected_release_number" \
+              || "$final_release_merged_at" != "$inspected_release_merged_at" \
+              || "$final_release_base_ref" != "$inspected_release_base_ref" \
+              || "$final_release_merge_sha" != "$inspected_release_merge_sha" ]]; then
+              echo "Refusing ancestry success after final live state changed." >&2
+              exit 1
+            fi
           fi
 
           echo "Final exact pull request tuple and selected verification results verified."

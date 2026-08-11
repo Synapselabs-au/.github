@@ -9,6 +9,28 @@ bash "${script_dir}/test-classify-underbark-pr.sh"
 bash "${script_dir}/test-verify-underbark-release-context.sh"
 
 if ! ruby -ryaml - "$workflow" <<'RUBY'
+def reject_duplicate_keys(node, path = "$")
+  case node
+  when Psych::Nodes::Stream, Psych::Nodes::Document, Psych::Nodes::Sequence
+    node.children.each_with_index { |child, index| reject_duplicate_keys(child, "#{path}[#{index}]") }
+  when Psych::Nodes::Mapping
+    keys = {}
+    node.children.each_slice(2) do |key_node, value_node|
+      key = key_node.respond_to?(:value) ? key_node.value : key_node.to_s
+      raise "duplicate YAML key #{key.inspect} at #{path}" if keys.key?(key)
+      keys[key] = true
+      reject_duplicate_keys(value_node, "#{path}.#{key}")
+    end
+  end
+end
+
+begin
+  reject_duplicate_keys(Psych.parse_stream("env:\n  APPLE_APP_ID: one\n  APPLE_APP_ID: two\n"))
+  raise "duplicate-key detector accepted a duplicate fixture"
+rescue RuntimeError => error
+  raise unless error.message.include?("duplicate YAML key")
+end
+reject_duplicate_keys(Psych.parse_stream(File.read(ARGV.fetch(0))))
 workflow = YAML.load_file(ARGV.fetch(0))
 jobs = workflow.fetch("jobs")
 expected_jobs = %w[classify functions database apple result]
@@ -19,7 +41,7 @@ raise "aggregation is not always-run" unless jobs.fetch("result").fetch("if").in
 
 expected_timeouts = {
   "classify" => 10,
-  "functions" => 35,
+  "functions" => 45,
   "database" => 40,
   "apple" => 65,
   "result" => 10,
@@ -27,6 +49,18 @@ expected_timeouts = {
 expected_timeouts.each do |name, timeout|
   raise "#{name} timeout mismatch" unless jobs.fetch(name).fetch("timeout-minutes") == timeout
   raise "#{name} is not Linux" unless jobs.fetch(name).fetch("runs-on") == "ubuntu-latest"
+end
+
+expected_permissions = {
+  "classify" => {"contents" => "read", "pull-requests" => "read"},
+  "functions" => {"contents" => "read"},
+  "database" => {"contents" => "read"},
+  "apple" => {"checks" => "read", "contents" => "read", "pull-requests" => "read"},
+  "result" => {"contents" => "read", "pull-requests" => "read"},
+}
+raise "workflow permissions must default to none" unless workflow.fetch("permissions") == {}
+expected_permissions.each do |name, permissions|
+  raise "#{name} permissions mismatch" unless jobs.fetch(name).fetch("permissions") == permissions
 end
 
 def serialized(job)
@@ -37,6 +71,7 @@ end
   body = serialized(jobs.fetch(name))
   raise "#{name} contains a GitHub token" if body.include?("github.token") || body.include?("GH_TOKEN")
   raise "#{name} contains a secret" if body.include?("secrets")
+  raise "#{name} exposes a host workflow control file" if %w[GITHUB_ENV GITHUB_PATH GITHUB_OUTPUT].any? { |key| body.include?(key) }
 end
 
 token_jobs = jobs.select { |_name, job| serialized(job).include?("github.token") }.keys
@@ -51,10 +86,29 @@ cleanup_index = database_run.index("supabase stop") or raise "database cleanup m
 trap_index = database_run.index("trap cleanup EXIT") or raise "cleanup trap missing"
 raise "cleanup is not installed before untrusted SQL" unless trap_index < start_index
 raise "database command ordering changed" unless cleanup_index < start_index && start_index < sql_index
+raise "candidate SQL is not copied into the disposable container" unless database_run.include?("docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests")
+raise "candidate SQL runs on the host" unless database_run.include?("docker exec supabase_db_underbark bash")
+raise "host shell reads candidate SQL" if database_run.include?("< \"$suite\"")
 
 result_run = jobs.fetch("result").fetch("steps").map { |step| step["run"] }.compact.join("\n")
 raise "lane aggregation missing" unless result_run.include?("require_lane_result")
 raise "terminal tuple read missing" unless result_run.include?("pulls/${PR_NUMBER}")
+local_ancestry_index = result_run.index("verify-underbark-ancestry-sync.sh") or raise "local ancestry validation missing"
+final_tuple_index = result_run.index("read -r final_head") or raise "fresh terminal tuple read missing"
+final_main_index = result_run.index("final_main=\"") or raise "fresh terminal main read missing"
+final_release_index = result_run.index("final_release_locks=\"") or raise "fresh terminal release read missing"
+success_index = result_run.index("Final exact pull request tuple and selected verification results verified.") or raise "terminal success missing"
+raise "local ancestry work occurs after terminal reads" unless local_ancestry_index < final_tuple_index
+raise "terminal read ordering changed" unless final_tuple_index < final_main_index && final_main_index < final_release_index && final_release_index < success_index
+raise "terminal success is not the final operation" unless result_run.lines.reject { |line| line.strip.empty? }.last.include?("Final exact pull request tuple")
+
+functions_run = jobs.fetch("functions").fetch("steps").map { |step| step["run"] }.compact.join("\n")
+raise "Deno container digest missing" unless functions_run.include?("denoland/deno:2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463")
+raise "candidate source is not copied into isolation" unless functions_run.include?("docker cp supabase/.")
+raise "candidate Deno does not execute in isolation" unless functions_run.scan("docker exec").length >= 3
+raise "a Deno command escaped the isolation container" unless functions_run.lines.grep(/deno (fmt|check|test)/).all? { |line| line.include?("docker exec") }
+raise "candidate container receives host environment" if functions_run.include?("--env") || functions_run.include?("--env-file")
+raise "candidate container has a host write mount" if functions_run.include?("--volume") || functions_run.match?(/docker (create|run).*\s-v\s/)
 RUBY
 then
   echo "FAIL: parsed workflow trust-boundary assertions failed" >&2
@@ -119,7 +173,7 @@ expect_job_contains() {
 }
 
 expect_job_contains classify 'timeout-minutes: 10' "must bound classification to 10 minutes"
-expect_job_contains functions 'timeout-minutes: 35' "must bound the serial 30-minute Deno lane"
+expect_job_contains functions 'timeout-minutes: 45' "must bound image pull, container setup, serial Deno commands, and cleanup"
 expect_job_contains database 'timeout-minutes: 40' "must bound database start, SQL, and cleanup"
 expect_job_contains apple 'timeout-minutes: 65' "must contain the 60-minute Apple polling window"
 expect_job_contains result 'timeout-minutes: 10' "must bound final aggregation"
@@ -134,24 +188,28 @@ expect_job_contains result 'if: ${{ always()' "must always aggregate selected la
 expect_job_contains result 'needs: [classify, functions, database, apple]' "must depend on every verification lane"
 expect_job_contains result 'name: Underbark PR Gate result' "must retain the one stable required status"
 
-expect_job_contains functions 'denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed' "must pin Deno setup"
-expect_job_contains functions 'deno-version: v2.9.5' "must pin Deno 2.9.5"
-expect_job_contains functions 'timeout 10m deno fmt --check supabase/functions' "must run fixed Deno formatting"
-expect_job_contains functions 'timeout 10m deno check --config supabase/functions/deno.json supabase/functions/*/index.ts' "must run fixed Deno checking"
-expect_job_contains functions 'timeout 10m deno test --config supabase/functions/deno.json supabase/functions' "must run fixed Deno tests"
+expect_job_contains functions 'permissions:' "must declare job-local least privilege"
+expect_job_contains functions 'contents: read' "must limit checkout permission to repository contents"
+expect_job_contains functions 'denoland/deno:2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463' "must pin the isolated Deno image"
+expect_job_contains functions 'docker cp supabase/. "$container:/workspace/supabase"' "must copy candidate files without a host mount"
+expect_job_contains functions 'timeout 10m docker exec "$container" deno fmt --check supabase/functions' "must isolate fixed Deno formatting"
+expect_job_contains functions 'timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts' "must isolate fixed Deno checking"
+expect_job_contains functions 'timeout 10m docker exec "$container" deno test --config supabase/functions/deno.json supabase/functions' "must isolate fixed Deno tests"
 
 expect_job_contains database 'supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1' "must pin Supabase setup"
 expect_job_contains database 'version: 2.113.0' "must pin Supabase CLI 2.113.0"
 expect_job_contains database 'trap cleanup EXIT' "must install same-step database cleanup"
 expect_job_contains database 'timeout 15m supabase start --workdir .' "must bound disposable database startup"
-expect_job_contains database 'timeout 10m bash -euo pipefail -c' "must bound SQL suites"
-expect_job_contains database 'psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1' "must run SQL against only the disposable local database"
+expect_job_contains database 'timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c' "must bound SQL suites inside the disposable database container"
+expect_job_contains database 'docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests' "must copy candidate SQL into the disposable container without a host mount"
+expect_job_contains database 'docker exec supabase_db_underbark bash -euo pipefail -c' "must process candidate SQL only inside the disposable database container"
+expect_job_contains database 'psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"' "must keep psql meta-commands inside the disposable database container"
 expect_job_contains database 'timeout 5m supabase stop --workdir . --no-backup' "must bound cleanup and disable backup"
 
 for untrusted_job in functions database; do
-  expect_job_excludes "$untrusted_job" 'GH_TOKEN:' "must keep ${untrusted_job} on a credential-free runner"
-  expect_job_excludes "$untrusted_job" 'github.token' "must keep ${untrusted_job} free of direct GitHub tokens"
-  expect_job_excludes "$untrusted_job" 'secrets' "must keep ${untrusted_job} free of secrets"
+  expect_job_excludes "$untrusted_job" 'GH_TOKEN:' "must keep ${untrusted_job} candidate commands free of an explicit GitHub token"
+  expect_job_excludes "$untrusted_job" 'github.token' "must not pass the workflow token directly to ${untrusted_job} candidate commands"
+  expect_job_excludes "$untrusted_job" 'secrets' "must keep ${untrusted_job} candidate commands free of secrets"
 done
 
 expect_job_excludes classify 'deno test' "must not execute candidate Deno before authenticated classification"
@@ -163,8 +221,9 @@ expect_job_excludes result 'psql ' "must not execute candidate SQL before final 
 
 token_count="$(grep -c '^[[:space:]]*GH_TOKEN:' "$workflow" || true)"
 github_token_count="$(grep -cF '${{ github.token }}' "$workflow" || true)"
-if [[ "$token_count" -ne 3 || "$github_token_count" -ne 3 ]]; then
-  echo "FAIL: workflow must expose tokens only to classify, Apple, and final aggregation" >&2
+apple_app_id_count="$(grep -c '^[[:space:]]*APPLE_APP_ID:' "$workflow" || true)"
+if [[ "$token_count" -ne 3 || "$github_token_count" -ne 3 || "$apple_app_id_count" -ne 1 ]]; then
+  echo "FAIL: workflow token boundary or unique Apple App ID declaration changed" >&2
   failures=$((failures + 1))
 fi
 expect_job_contains classify 'GH_TOKEN: ${{ github.token }}' "must authenticate trusted classification"
