@@ -46,49 +46,51 @@ expect_classification() {
   fi
 }
 
-expect_failure() {
-  description="$1"
-  shift
-
-  set +e
-  printf '%s\0' "$@" | "$classifier" >/dev/null 2>&1
-  status=$?
-  set -e
-
-  if [ "$status" -eq 0 ]; then
-    echo "FAIL: ${description}: expected non-zero status" >&2
-    failures=$((failures + 1))
-  fi
-}
-
-expect_classification static "root Markdown" M README.md
-expect_classification static "nested Markdown" A docs/guides/setup.md
-expect_classification static "pull request template" M .github/pull_request_template.md
-expect_classification static "legacy workflow deletion" \
+expect_classification $'static\t0\t0' "ordinary Markdown only" M README.md
+expect_classification $'static\t0\t0' "nested Markdown" A docs/guides/setup.md
+expect_classification $'static\t0\t0' "pull request template" M .github/pull_request_template.md
+expect_classification $'static\t0\t0' "legacy workflow deletion" \
   D .github/workflows/ci.yml \
   D .github/workflows/pr-source-policy.yml
-expect_classification static "legacy classifier deletion" \
+expect_classification $'static\t0\t0' "legacy classifier deletion" \
   D scripts/classify-ci-changes.sh \
   D scripts/verify-ci-classifier.sh \
   D scripts/verify-ci-workflow.sh
 
-expect_classification apple "RecovrKit logic" M RecovrKit/Sources/RecovrKit/Scoring/Recovery.swift
-expect_classification apple "iPhone source" A Recovr/TodayView.swift
-expect_classification apple "Watch source" M RecovrWatch/RecoveryView.swift
-expect_classification apple "Markdown inside an iPhone target" M Recovr/RuntimeContent.md
-expect_classification apple "Markdown inside a Watch target" M RecovrWatch/RuntimeContent.md
-expect_classification apple "project configuration" M project.yml
-expect_classification apple "signing script" M scripts/verify-signing.sh
-expect_classification apple "mixed docs and Apple" M docs/README.md M Recovr/App.swift
+expect_classification $'apple\t0\t0' "RecovrKit logic" M RecovrKit/Sources/RecovrKit/Scoring/Recovery.swift
+expect_classification $'apple\t0\t0' "iPhone source" A Recovr/TodayView.swift
+expect_classification $'apple\t0\t0' "Watch source" M RecovrWatch/RecoveryView.swift
+expect_classification $'apple\t0\t0' "Markdown inside an iPhone target" M Recovr/RuntimeContent.md
+expect_classification $'apple\t0\t0' "Markdown inside a Watch target" M RecovrWatch/RuntimeContent.md
+expect_classification $'apple\t0\t0' "project configuration" M project.yml
+expect_classification $'apple\t0\t0' "signing script" M scripts/verify-signing.sh
+expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M Recovr/App.swift
 
-expect_classification blocked "unknown root file" M Package.resolved
-expect_classification blocked "unknown workflow" A .github/workflows/new-workflow.yml
-expect_classification blocked "legacy workflow modification" M .github/workflows/ci.yml
-expect_classification blocked "mixed static and unknown" M README.md A tools/new-tool.sh
-expect_classification blocked "mixed Apple and unknown" M Recovr/App.swift A tools/new-tool.sh
-expect_classification blocked "empty diff"
+expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts
+expect_classification $'backend\t1\t0' "Supabase function documentation" M supabase/functions/README.md
+expect_classification $'backend\t0\t1' "Supabase migration" M supabase/migrations/20260101000000_example.sql
+expect_classification $'backend\t0\t1' "Supabase database test" M supabase/tests/example.sql
+expect_classification $'backend\t0\t1' "Supabase configuration" M supabase/config.toml
+expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
+expect_classification $'backend\t0\t1' "Supabase schema" M supabase/schemas/example.sql
+expect_classification $'backend\t1\t1' "function plus migration" \
+  M supabase/functions/delete-account/index.ts \
+  M supabase/migrations/20260101000000_example.sql
+expect_classification $'apple-backend\t1\t0' "function plus Apple source" \
+  M supabase/functions/delete-account/index.ts \
+  M Recovr/App.swift
+expect_classification $'apple-backend\t0\t1' "migration plus project configuration" \
+  M supabase/migrations/20260101000000_example.sql \
+  M project.yml
 
-expect_failure "missing path in status pair" M
+expect_classification $'blocked\t0\t0' "unknown root file" M Package.resolved
+expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
+expect_classification $'blocked\t0\t0' "legacy workflow modification" M .github/workflows/ci.yml
+expect_classification $'blocked\t0\t0' "mixed static and unknown" M README.md A tools/new-tool.sh
+expect_classification $'blocked\t0\t0' "mixed Apple and unknown" M Recovr/App.swift A tools/new-tool.sh
+expect_classification $'blocked\t0\t0' "empty diff"
+expect_classification $'blocked\t0\t0' "malformed status pair" M
+expect_classification $'blocked\t0\t0' "rename ambiguity" R100 Recovr/Old.swift Recovr/New.swift
 
 job_count="$(grep -c '^    runs-on:' "$workflow")"
 if [ "$job_count" -ne 1 ]; then
