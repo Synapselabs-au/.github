@@ -40,8 +40,10 @@ jobs:
         env:
           APPLE_APP_ID: "117084"
           APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS
+          EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
@@ -72,10 +74,72 @@ jobs:
             fi
           }
 
+          require_current_main() {
+            expected_main="$1"
+            current_main="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha')"
+            if [ "$current_main" != "$expected_main" ]; then
+              echo "Refusing ancestry evidence after main moved." >&2
+              exit 1
+            fi
+          }
+
+          require_release_context() {
+            if [ "$EVENT_AUTHOR_TYPE" != "Bot" \
+              || "$EVENT_HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+              echo "Ancestry syncs must be App-authored from the protected repository." >&2
+              exit 1
+            fi
+
+            release_locks="$(gh api -X GET search/issues \
+              -f "q=repo:${GITHUB_REPOSITORY} is:pr label:release-in-flight")"
+            if [ "$(jq -r '.total_count' <<<"$release_locks")" -ne 1 ]; then
+              echo "Expected exactly one release-in-flight pull request." >&2
+              exit 1
+            fi
+            release_lock_number="$(jq -r '.items[0].number' <<<"$release_locks")"
+
+            release_pr="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${release_lock_number}")"
+            release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$release_pr")"
+            if [ "$(jq -r '.merged_at // empty' <<<"$release_pr")" = "" \
+              || [ "$(jq -r '.base.ref' <<<"$release_pr")" != "dev" \
+              || [ -z "$release_merge_sha" ]; then
+              echo "The release-in-flight marker must identify a merged release PR into dev." >&2
+              exit 1
+            fi
+
+            git -C .candidate cat-file -e "${release_merge_sha}^{commit}"
+            if ! git -C .candidate merge-base --is-ancestor \
+              "$release_merge_sha" "$LIVE_BASE_SHA"; then
+              echo "The release-in-flight PR is not part of the live release base." >&2
+              exit 1
+            fi
+          }
+
           require_current_tuple
           git -C .candidate cat-file -e "${LIVE_BASE_SHA}^{commit}"
           git -C .candidate cat-file -e "${LIVE_HEAD}^{commit}"
           git -C .candidate diff --check "${LIVE_BASE_SHA}...${LIVE_HEAD}"
+
+          if git -C .candidate diff --quiet "${LIVE_BASE_SHA}...${LIVE_HEAD}"; then
+            if [ "$LIVE_BASE_REF" != "dev" ]; then
+              echo "An empty diff is accepted only for an exact Underbark dev ancestry sync." >&2
+              exit 1
+            fi
+            require_release_context
+            LIVE_MAIN_SHA="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha')"
+            .gate/scripts/verify-underbark-ancestry-sync.sh \
+              .candidate "$LIVE_BASE_SHA" "$LIVE_HEAD" "$LIVE_MAIN_SHA"
+            require_current_tuple
+            require_current_main "$LIVE_MAIN_SHA"
+            require_release_context
+            echo "Tree-identical release ancestry sync verified. Apple compute is not required."
+            exit 0
+          fi
 
           classification="$(
             git -C .candidate diff --name-status --no-renames -z \
