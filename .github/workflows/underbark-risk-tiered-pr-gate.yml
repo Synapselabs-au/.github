@@ -6,7 +6,7 @@ on:
   pull_request:
 
 concurrency:
-  group: underbark-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: underbark-pr-gate-${{ github.repository }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -45,6 +45,8 @@ jobs:
       - name: Classify exact diff
         id: classify
         env:
+          EVENT_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          EVENT_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
           EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -103,7 +105,8 @@ jobs:
             release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$release_pr")"
 
             .gate/scripts/verify-underbark-release-context.sh \
-              "$EVENT_AUTHOR_TYPE" "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
+              "$EVENT_AUTHOR_LOGIN" "$EVENT_AUTHOR_ID" "$EVENT_AUTHOR_TYPE" \
+              "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
               "$LIVE_BASE_REF" "$release_merged_at" "$release_base_ref" \
               "$release_merge_sha"
             git -C .candidate cat-file -e "${release_merge_sha}^{commit}"
@@ -226,9 +229,19 @@ jobs:
             eval 'setInterval(() => {}, 3600000)'
           timeout 1m docker start "$container" >/dev/null
           timeout 1m docker cp supabase/. "$container:/workspace/supabase"
-          timeout 10m docker exec "$container" deno fmt --check supabase/functions
-          timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
-          timeout 10m docker exec "$container" deno test --config supabase/functions/deno.json supabase/functions
+          timeout 10m docker exec "$container" sh -euc '
+            if find supabase/functions -type l -print -quit | grep -q .; then
+              echo "Symlinks are not allowed under supabase/functions." >&2
+              exit 1
+            fi
+            find supabase/functions -type f -name "*.ts" -print0 | LC_ALL=C sort -z > /tmp/underbark-typescript-files
+            test -s /tmp/underbark-typescript-files
+            xargs -0 deno fmt --check < /tmp/underbark-typescript-files
+            xargs -0 deno check --frozen --config supabase/functions/deno.json < /tmp/underbark-typescript-files
+            find supabase/functions -type f \( -name "*_test.ts" -o -name "*.test.ts" \) -print0 | LC_ALL=C sort -z > /tmp/underbark-deno-test-files
+            test -s /tmp/underbark-deno-test-files
+            xargs -0 deno test --frozen --config supabase/functions/deno.json < /tmp/underbark-deno-test-files
+          '
 
   database:
     name: Verify backend database
@@ -270,9 +283,33 @@ jobs:
           trap cleanup EXIT
 
           timeout 15m supabase db start --workdir .
+          expected_postgres_digest="public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459"
+          running_image_id="$(timeout 1m docker inspect --format '{{.Image}}' supabase_db_underbark)"
+          expected_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
+          mapfile -t running_repo_digests < <(timeout 1m docker image inspect "$running_image_id" --format '{{range .RepoDigests}}{{println .}}{{end}}' | LC_ALL=C sort -u)
+          digest_match=0
+          for repo_digest in "${running_repo_digests[@]}"; do
+            if [[ "$repo_digest" == "$expected_postgres_digest" ]]; then
+              digest_match=1
+            fi
+          done
+          if [[ "$running_image_id" != "$expected_image_id" || "$digest_match" -ne 1 ]]; then
+            echo "The disposable Postgres image does not match the trusted digest." >&2
+            exit 1
+          fi
           timeout 1m docker exec supabase_db_underbark mkdir -p /tmp/underbark-tests
           timeout 1m docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests
-          timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c 'for suite in /tmp/underbark-tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done'
+          timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c '
+            if find /tmp/underbark-tests -type l -print -quit | grep -q .; then
+              echo "Symlinks are not allowed under supabase/tests." >&2
+              exit 1
+            fi
+            find /tmp/underbark-tests -type f -name "*.sql" -print0 | LC_ALL=C sort -z > /tmp/underbark-sql-files
+            test -s /tmp/underbark-sql-files
+            while IFS= read -r -d "" suite; do
+              psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"
+            done < /tmp/underbark-sql-files
+          '
 
   apple:
     name: Verify exact-head Apple result
@@ -318,18 +355,18 @@ jobs:
 
           for attempt in $(seq 1 120); do
             require_current_tuple
-            check_json="$(gh api \
+            check_pages="$(gh api --paginate --slurp \
               -H "Accept: application/vnd.github+json" \
               "repos/${GITHUB_REPOSITORY}/commits/${LIVE_HEAD}/check-runs?per_page=100")"
             check="$(jq -c \
               --arg name "$APPLE_CHECK_NAME" \
               --argjson app_id "$APPLE_APP_ID" \
               --argjson pr_number "$PR_NUMBER" \
-              '[.check_runs[]
+              '[.[].check_runs[]
                 | select(.name == $name and .app.id == $app_id)
                 | select(any(.pull_requests[]?; .number == $pr_number))]
                | sort_by(.id)
-               | last // empty' <<<"$check_json")"
+               | last // empty' <<<"$check_pages")"
 
             if [[ -n "$check" ]]; then
               status="$(jq -r '.status' <<<"$check")"
@@ -388,6 +425,8 @@ jobs:
           BACKEND_FUNCTIONS: ${{ needs.classify.outputs.backend_functions }}
           CLASSIFICATION: ${{ needs.classify.outputs.classification }}
           DATABASE_RESULT: ${{ needs.database.result }}
+          EVENT_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          EVENT_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
           EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -416,6 +455,18 @@ jobs:
 
           if [[ "$CLASSIFY_RESULT" != "success" ]]; then
             echo "Trusted classification did not succeed: ${CLASSIFY_RESULT}." >&2
+            exit 1
+          fi
+          case "$CLASSIFICATION:$BACKEND_FUNCTIONS:$BACKEND_DATABASE:$ANCESTRY_SYNC" in
+            static:0:0:0|static:0:0:1|backend:1:0:0|backend:0:1:0|backend:1:1:0|apple:0:0:0|apple-backend:1:0:0|apple-backend:0:1:0|apple-backend:1:1:0) ;;
+            *)
+              echo "Invalid terminal classifier outputs." >&2
+              exit 1
+              ;;
+          esac
+          if [[ "$ANCESTRY_SYNC" == "1" && -z "$ANCESTRY_MAIN_SHA" \
+            || "$ANCESTRY_SYNC" == "0" && -n "$ANCESTRY_MAIN_SHA" ]]; then
+            echo "Invalid terminal ancestry outputs." >&2
             exit 1
           fi
           require_lane_result "$BACKEND_FUNCTIONS" "$FUNCTIONS_RESULT" "function"
@@ -463,7 +514,8 @@ jobs:
             inspected_release_base_ref="$(jq -r '.base.ref' <<<"$inspected_release_pr")"
             inspected_release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$inspected_release_pr")"
             .gate/scripts/verify-underbark-release-context.sh \
-              "$EVENT_AUTHOR_TYPE" "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
+              "$EVENT_AUTHOR_LOGIN" "$EVENT_AUTHOR_ID" "$EVENT_AUTHOR_TYPE" \
+              "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
               "$inspected_base_ref" "$inspected_release_merged_at" \
               "$inspected_release_base_ref" "$inspected_release_merge_sha"
             git -C .candidate cat-file -e "${inspected_release_merge_sha}^{commit}"

@@ -42,7 +42,11 @@ while IFS= read -r -d '' status; do
     supabase/functions/*)
       backend_functions=1
       ;;
-    supabase/config.toml|supabase/migrations/*|supabase/tests/*|supabase/seed.sql|supabase/schemas/*)
+    supabase/config.toml)
+      backend_functions=1
+      backend_database=1
+      ;;
+    supabase/migrations/*|supabase/tests/*|supabase/seed.sql|supabase/schemas/*)
       backend_database=1
       ;;
     scripts/archive-app.sh|scripts/render-brand-assets.sh|scripts/verify-archive.sh|scripts/verify-brand.sh|scripts/verify-distribution-bundles.sh|scripts/verify-ipa.sh|scripts/verify-pr-source-policy-tests.sh|scripts/verify-pr-source-policy.sh|scripts/verify-release-record.sh|scripts/verify-signing.sh|scripts/verify-storekit-catalogue.sh|scripts/verify-version-change-policy-tests.sh|scripts/verify-version-change-policy.sh|scripts/verify-version.sh|scripts/verify-xcode-cloud-config.sh|scripts/verify-xcode-cloud-prebuild-tests.sh|scripts/version.sh)

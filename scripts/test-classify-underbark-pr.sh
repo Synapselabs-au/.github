@@ -70,7 +70,7 @@ expect_classification $'backend\t1\t0' "Supabase function source" M supabase/fun
 expect_classification $'backend\t1\t0' "Supabase function documentation" M supabase/functions/README.md
 expect_classification $'backend\t0\t1' "Supabase migration" M supabase/migrations/20260101000000_example.sql
 expect_classification $'backend\t0\t1' "Supabase database test" M supabase/tests/example.sql
-expect_classification $'backend\t0\t1' "Supabase configuration" M supabase/config.toml
+expect_classification $'backend\t1\t1' "Supabase configuration" M supabase/config.toml
 expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
 expect_classification $'backend\t0\t1' "Supabase schema" M supabase/schemas/example.sql
 expect_classification $'backend\t1\t1' "function plus migration" \
@@ -111,6 +111,8 @@ expect_workflow_contains "git -C .candidate diff --name-status --no-renames -z" 
 expect_workflow_contains 'git -C .candidate diff --quiet "${LIVE_BASE_SHA}...${LIVE_HEAD}"' "must isolate the empty-diff ancestry path"
 expect_workflow_contains 'verify-underbark-ancestry-sync.sh' "must verify exact ancestry-sync parents and tree"
 expect_workflow_contains 'git/ref/heads/main' "must bind the ancestry sync to current main"
+expect_workflow_contains 'EVENT_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}' "must bind ancestry syncs to the dedicated App login"
+expect_workflow_contains 'EVENT_AUTHOR_ID: ${{ github.event.pull_request.user.id }}' "must bind ancestry syncs to the dedicated App user ID"
 expect_workflow_contains 'EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}' "must inspect ancestry-sync authorship"
 expect_workflow_contains 'EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}' "must bind ancestry syncs to the protected repository"
 expect_workflow_contains 'verify-underbark-release-context.sh' "must use executable release-context predicates"
@@ -134,8 +136,10 @@ if [ "$tuple_check_count" -lt 3 ]; then
 fi
 expect_workflow_contains 'any(.pull_requests[]?; .number == $pr_number)' "must bind Apple evidence to this pull request"
 expect_workflow_contains "sort_by(.id)" "must select the newest Apple check deterministically"
-expect_workflow_contains 'group: underbark-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}' "must isolate concurrency by pull request head"
-expect_workflow_contains "cancel-in-progress: true" "must cancel duplicate attempts for one head"
+expect_workflow_contains "gh api --paginate --slurp" "must inspect every page of exact-head check runs"
+expect_workflow_contains 'group: underbark-pr-gate-${{ github.repository }}-${{ github.event.pull_request.number }}' "must share concurrency across superseded heads of one pull request"
+expect_workflow_excludes 'group: underbark-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}' "must not isolate superseded heads from cancellation"
+expect_workflow_contains "cancel-in-progress: true" "must cancel superseded attempts for one pull request"
 expect_workflow_excludes "types: [" "must not claim unsupported ruleset-workflow event filters"
 expect_workflow_excludes "macos-" "must not allocate a GitHub-hosted macOS runner"
 expect_workflow_excludes "xcodebuild" "must not run Xcode"

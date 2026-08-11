@@ -10,6 +10,7 @@ bash "${script_dir}/test-verify-underbark-release-context.sh"
 
 if ! ruby -ryaml - "$workflow" <<'RUBY'
 require "digest"
+require "json"
 
 def reject_duplicate_keys(node, path = "$")
   case node
@@ -40,6 +41,18 @@ raise "unexpected job graph" unless jobs.keys == expected_jobs
 raise "required status changed" unless jobs.fetch("result").fetch("name") == "Underbark PR Gate result"
 raise "aggregation is not terminal" unless jobs.fetch("result").fetch("needs") == expected_jobs.first(4)
 raise "aggregation is not always-run" unless jobs.fetch("result").fetch("if").include?("always()")
+raise "classifier output contract changed" unless jobs.fetch("classify").fetch("outputs") == {
+  "classification" => "${{ steps.classify.outputs.classification }}",
+  "backend_functions" => "${{ steps.classify.outputs.backend_functions }}",
+  "backend_database" => "${{ steps.classify.outputs.backend_database }}",
+  "ancestry_sync" => "${{ steps.classify.outputs.ancestry_sync }}",
+  "ancestry_main_sha" => "${{ steps.classify.outputs.ancestry_main_sha }}",
+}
+raise "superseded heads do not share one concurrency group" unless workflow.fetch("concurrency") == {
+  "group" => "underbark-pr-gate-${{ github.repository }}-${{ github.event.pull_request.number }}",
+  "cancel-in-progress" => true,
+}
+raise "continue-on-error is globally prohibited" if YAML.dump(workflow).include?("continue-on-error")
 
 expected_timeouts = {
   "classify" => 10,
@@ -100,9 +113,19 @@ EXPECTED_FUNCTIONS_RUN = <<~'BASH'
     eval 'setInterval(() => {}, 3600000)'
   timeout 1m docker start "$container" >/dev/null
   timeout 1m docker cp supabase/. "$container:/workspace/supabase"
-  timeout 10m docker exec "$container" deno fmt --check supabase/functions
-  timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
-  timeout 10m docker exec "$container" deno test --config supabase/functions/deno.json supabase/functions
+  timeout 10m docker exec "$container" sh -euc '
+    if find supabase/functions -type l -print -quit | grep -q .; then
+      echo "Symlinks are not allowed under supabase/functions." >&2
+      exit 1
+    fi
+    find supabase/functions -type f -name "*.ts" -print0 | LC_ALL=C sort -z > /tmp/underbark-typescript-files
+    test -s /tmp/underbark-typescript-files
+    xargs -0 deno fmt --check < /tmp/underbark-typescript-files
+    xargs -0 deno check --frozen --config supabase/functions/deno.json < /tmp/underbark-typescript-files
+    find supabase/functions -type f \( -name "*_test.ts" -o -name "*.test.ts" \) -print0 | LC_ALL=C sort -z > /tmp/underbark-deno-test-files
+    test -s /tmp/underbark-deno-test-files
+    xargs -0 deno test --frozen --config supabase/functions/deno.json < /tmp/underbark-deno-test-files
+  '
 BASH
 
 EXPECTED_DATABASE_RUN = <<~'BASH'
@@ -121,9 +144,33 @@ EXPECTED_DATABASE_RUN = <<~'BASH'
   trap cleanup EXIT
 
   timeout 15m supabase db start --workdir .
+  expected_postgres_digest="public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459"
+  running_image_id="$(timeout 1m docker inspect --format '{{.Image}}' supabase_db_underbark)"
+  expected_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
+  mapfile -t running_repo_digests < <(timeout 1m docker image inspect "$running_image_id" --format '{{range .RepoDigests}}{{println .}}{{end}}' | LC_ALL=C sort -u)
+  digest_match=0
+  for repo_digest in "${running_repo_digests[@]}"; do
+    if [[ "$repo_digest" == "$expected_postgres_digest" ]]; then
+      digest_match=1
+    fi
+  done
+  if [[ "$running_image_id" != "$expected_image_id" || "$digest_match" -ne 1 ]]; then
+    echo "The disposable Postgres image does not match the trusted digest." >&2
+    exit 1
+  fi
   timeout 1m docker exec supabase_db_underbark mkdir -p /tmp/underbark-tests
   timeout 1m docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests
-  timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c 'for suite in /tmp/underbark-tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done'
+  timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c '
+    if find /tmp/underbark-tests -type l -print -quit | grep -q .; then
+      echo "Symlinks are not allowed under supabase/tests." >&2
+      exit 1
+    fi
+    find /tmp/underbark-tests -type f -name "*.sql" -print0 | LC_ALL=C sort -z > /tmp/underbark-sql-files
+    test -s /tmp/underbark-sql-files
+    while IFS= read -r -d "" suite; do
+      psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"
+    done < /tmp/underbark-sql-files
+  '
 BASH
 
 EXPECTED_FUNCTIONS_EXECUTION_STEP = {
@@ -168,9 +215,15 @@ EXPECTED_CANDIDATE_JOB_STEPS = {
 }.freeze
 
 EXPECTED_TRUSTED_RUN_SHA256 = {
-  "classify" => "d29ef65916d6155c9761d316b3ba40a378f68eb2d27a3c7fa0249073a1330ff1",
-  "apple" => "8a1c83e7c409ef0b4bc1bfbdbee8bf481b95a7289c56a50ef35239d38f88359b",
-  "result" => "bad185073cae450996b11d89f46b714ef19e90b008bdad6e3afd9fc94e45dcfb",
+  "classify" => "e48b3ca47e7b76f0717176af634af0310164ea3475b1be5ba9fd7b7699dfef35",
+  "apple" => "93d8d4164687158f2f6260d19e87547301e8e2b46031409180de101b9cf857bb",
+  "result" => "799dae466b679261da5cc9ad2ebb8ff71eb593a065da0e7efd803a72d5e35df2",
+}.freeze
+
+EXPECTED_TRUSTED_STEPS_SHA256 = {
+  "classify" => "61a5536484324b7a9935219054ad18b5c11770bf5ea040c6b7c54258425b1021",
+  "apple" => "fde3f5f3cda4723647241559b0a6c3b99fe4417da9a45b39581d8bb0c305baeb",
+  "result" => "722e756803e12aa09e8066dead7cd10e6b6aa657e134c1bc04c6c80cec9de24b",
 }.freeze
 
 def require_exact_candidate_job_contract(jobs, job_name, expected_steps)
@@ -187,6 +240,12 @@ def require_exact_trusted_run_contracts(jobs)
     next if actual_sha == expected_sha
 
     raise "trusted #{job_name} run script contract changed"
+  end
+  EXPECTED_TRUSTED_STEPS_SHA256.each do |job_name, expected_sha|
+    actual_sha = Digest::SHA256.hexdigest(JSON.generate(jobs.fetch(job_name).fetch("steps")))
+    next if actual_sha == expected_sha
+
+    raise "trusted #{job_name} step contract changed"
   end
 end
 
@@ -238,6 +297,12 @@ fixture.fetch("jobs").fetch("classify").fetch("steps").find { |step| step["run"]
 expect_boundary_rejection("composed Docker in trusted classification", fixture, /\Atrusted classify run script contract changed\z/)
 
 fixture = Marshal.load(Marshal.dump(workflow))
+fixture.fetch("jobs").fetch("apple").fetch("steps").unshift(
+  {"name" => "Unexpected trusted action", "uses" => "example/action@0123456789abcdef"},
+)
+expect_boundary_rejection("additional action in token-bearing job", fixture, /\Atrusted apple step contract changed\z/)
+
+fixture = Marshal.load(Marshal.dump(workflow))
 fixture.fetch("jobs").fetch("functions").fetch("steps").insert(
   1,
   {"name" => "Unexpected action", "uses" => "example/action@0123456789abcdef"},
@@ -250,13 +315,13 @@ expect_boundary_rejection("additional unrelated functions command", fixture, /\A
 
 fixture = Marshal.load(Marshal.dump(workflow))
 functions_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("deno fmt") }
-expected_deno_order = <<~'BASH'
-  timeout 10m docker exec "$container" deno fmt --check supabase/functions
-  timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
+expected_deno_order = <<'BASH'
+  xargs -0 deno fmt --check < /tmp/underbark-typescript-files
+  xargs -0 deno check --frozen --config supabase/functions/deno.json < /tmp/underbark-typescript-files
 BASH
-reordered_deno = <<~'BASH'
-  timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
-  timeout 10m docker exec "$container" deno fmt --check supabase/functions
+reordered_deno = <<'BASH'
+  xargs -0 deno check --frozen --config supabase/functions/deno.json < /tmp/underbark-typescript-files
+  xargs -0 deno fmt --check < /tmp/underbark-typescript-files
 BASH
 raise "reordered Deno fixture construction failed" unless functions_step["run"].sub!(expected_deno_order, reordered_deno)
 expect_boundary_rejection("reordered Deno commands", fixture, /\Acandidate functions execution step contract changed\z/)
@@ -278,8 +343,8 @@ expect_boundary_rejection("host Deno", fixture, /\Acandidate functions execution
 fixture = Marshal.load(Marshal.dump(workflow))
 deno_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("deno fmt") }
 raise "same-line Deno fixture construction failed" unless deno_step["run"].sub!(
-  'timeout 10m docker exec "$container" deno fmt --check supabase/functions',
-  'timeout 10m docker exec "$container" deno fmt --check supabase/functions; deno test supabase/functions',
+  'xargs -0 deno fmt --check < /tmp/underbark-typescript-files',
+  'xargs -0 deno fmt --check < /tmp/underbark-typescript-files; deno test supabase/functions',
 )
 expect_boundary_rejection("same-line host Deno", fixture, /\Acandidate functions execution step contract changed\z/)
 
@@ -293,7 +358,7 @@ expect_boundary_rejection("continued-command host Deno", fixture, /\Acandidate f
 
 fixture = Marshal.load(Marshal.dump(workflow))
 deno_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("deno fmt") }
-deno_step["run"].sub!('docker exec "$container" deno fmt', 'docker exec wrong-container deno fmt')
+raise "wrong Deno container fixture construction failed" unless deno_step["run"].sub!('docker exec "$container" sh', 'docker exec wrong-container sh')
 expect_boundary_rejection("wrong Deno container", fixture, /\Acandidate functions execution step contract changed\z/)
 
 fixture = Marshal.load(Marshal.dump(workflow))
@@ -303,8 +368,8 @@ expect_boundary_rejection("host psql", fixture, /\Acandidate database execution 
 fixture = Marshal.load(Marshal.dump(workflow))
 database_step = fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"].to_s.include?("psql") }
 raise "same-line psql fixture construction failed" unless database_step["run"].sub!(
-  "done'\n",
-  "done' && psql postgresql://localhost/postgres -c 'select 1'\n",
+  '-v ON_ERROR_STOP=1 -f "$suite"',
+  '-v ON_ERROR_STOP=1 -f "$suite"; psql postgresql://localhost/postgres -c "select 1"',
 )
 expect_boundary_rejection("same-line host psql", fixture, /\Acandidate database execution step contract changed\z/)
 
@@ -404,6 +469,22 @@ raise "terminal success is not the final operation" unless result_run.lines.reje
 functions_run = run_scripts(jobs.fetch("functions")).join("\n")
 raise "Deno container digest missing" unless functions_run.include?("denoland/deno:2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463")
 raise "candidate source is not copied into isolation" unless functions_run.include?("docker cp supabase/.")
+raise "TypeScript discovery is not recursive and NUL-safe" unless functions_run.include?('find supabase/functions -type f -name "*.ts" -print0 | LC_ALL=C sort -z')
+raise "Deno checking is not lock-frozen" unless functions_run.include?("deno check --frozen")
+raise "Deno testing is not lock-frozen" unless functions_run.include?("deno test --frozen")
+raise "Deno input discovery does not fail closed" unless functions_run.include?("test -s /tmp/underbark-typescript-files") && functions_run.include?("test -s /tmp/underbark-deno-test-files")
+
+database_run = run_scripts(jobs.fetch("database")).join("\n")
+digest_index = database_run.index("expected_postgres_digest=") or raise "trusted Postgres digest missing"
+copy_index = database_run.index("docker cp supabase/tests/.") or raise "SQL copy missing"
+raise "Postgres digest is not verified before SQL execution" unless digest_index < copy_index
+raise "running Postgres RepoDigests are not inspected" unless database_run.include?("{{range .RepoDigests}}")
+raise "SQL discovery is not recursive and NUL-safe" unless database_run.include?('find /tmp/underbark-tests -type f -name "*.sql" -print0 | LC_ALL=C sort -z')
+raise "SQL discovery does not fail closed" unless database_run.include?("test -s /tmp/underbark-sql-files")
+
+apple_run = run_scripts(jobs.fetch("apple")).join("\n")
+raise "Apple check-run pagination missing" unless apple_run.include?("gh api --paginate --slurp")
+raise "Apple check selection does not inspect every page" unless apple_run.include?("[.[].check_runs[]")
 RUBY
 then
   echo "FAIL: parsed workflow trust-boundary assertions failed" >&2
@@ -487,18 +568,22 @@ expect_job_contains functions 'permissions:' "must declare job-local least privi
 expect_job_contains functions 'contents: read' "must limit checkout permission to repository contents"
 expect_job_contains functions 'denoland/deno:2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463' "must pin the isolated Deno image"
 expect_job_contains functions 'docker cp supabase/. "$container:/workspace/supabase"' "must copy candidate files without a host mount"
-expect_job_contains functions 'timeout 10m docker exec "$container" deno fmt --check supabase/functions' "must isolate fixed Deno formatting"
-expect_job_contains functions 'timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts' "must isolate fixed Deno checking"
-expect_job_contains functions 'timeout 10m docker exec "$container" deno test --config supabase/functions/deno.json supabase/functions' "must isolate fixed Deno tests"
+expect_job_contains functions 'find supabase/functions -type f -name "*.ts" -print0 | LC_ALL=C sort -z' "must discover every TypeScript file recursively and deterministically"
+expect_job_contains functions 'xargs -0 deno fmt --check' "must format every discovered TypeScript file"
+expect_job_contains functions 'xargs -0 deno check --frozen --config supabase/functions/deno.json' "must type-check every TypeScript file against the frozen lock"
+expect_job_contains functions 'xargs -0 deno test --frozen --config supabase/functions/deno.json' "must run every discovered Deno test against the frozen lock"
 
 expect_job_contains database 'supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1' "must pin Supabase setup"
 expect_job_contains database 'version: 2.113.0' "must pin Supabase CLI 2.113.0"
 expect_job_contains database 'trap cleanup EXIT' "must install same-step database cleanup"
 expect_job_contains database 'timeout 15m supabase db start --workdir .' "must bound Postgres-only database startup"
+expect_job_contains database 'public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459' "must bind the disposable Postgres image to the trusted digest"
+expect_job_contains database "{{range .RepoDigests}}{{println .}}{{end}}" "must inspect the running image RepoDigests"
 expect_job_contains database 'timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c' "must bound SQL suites inside the disposable database container"
 expect_job_contains database 'docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests' "must copy candidate SQL into the disposable container without a host mount"
 expect_job_contains database 'docker exec supabase_db_underbark bash -euo pipefail -c' "must process candidate SQL only inside the disposable database container"
 expect_job_contains database 'psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"' "must keep psql meta-commands inside the disposable database container"
+expect_job_contains database 'find /tmp/underbark-tests -type f -name "*.sql" -print0 | LC_ALL=C sort -z' "must discover every SQL suite recursively and deterministically"
 expect_job_contains database 'timeout 5m supabase stop --workdir . --no-backup' "must bound cleanup and disable backup"
 
 for untrusted_job in functions database; do
@@ -532,6 +617,7 @@ expect_job_contains result 'APPLE_RESULT: ${{ needs.apple.result }}' "must aggre
 expect_job_contains result 'require_lane_result "$BACKEND_FUNCTIONS" "$FUNCTIONS_RESULT"' "must reject a missing selected functions result"
 expect_job_contains result 'require_lane_result "$BACKEND_DATABASE" "$DATABASE_RESULT"' "must reject a missing selected database result"
 expect_job_contains result 'require_lane_result 1 "$APPLE_RESULT"' "must reject a missing selected Apple result"
+expect_job_contains result 'Invalid terminal classifier outputs.' "must reject empty or inconsistent classifier outputs"
 expect_job_contains result 'verify-underbark-release-context.sh' "must execute final release-context predicates"
 expect_job_contains result 'verify-underbark-ancestry-sync.sh' "must repeat exact ancestry validation at terminal success"
 expect_job_contains result 'Final exact pull request tuple and selected verification results verified.' "must end with fresh tuple evidence"
@@ -544,6 +630,7 @@ expect_excludes 'actions/cache' "must not use an Actions cache"
 expect_excludes 'upload-artifact' "must not upload artifacts"
 expect_excludes 'download-artifact' "must not download artifacts"
 expect_excludes 'matrix:' "must not use a matrix"
+expect_excludes 'continue-on-error' "must not permit failed trusted or candidate steps to continue"
 expect_excludes 'deployment' "must not deploy"
 expect_excludes '.candidate/scripts/' "must not execute candidate scripts"
 expect_excludes 'macos-' "must not allocate a macOS runner"
