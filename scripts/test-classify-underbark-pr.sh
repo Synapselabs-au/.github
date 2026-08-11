@@ -109,7 +109,8 @@ if [ "$tuple_check_count" -lt 3 ]; then
 fi
 expect_workflow_contains 'any(.pull_requests[]?; .number == $pr_number)' "must bind Apple evidence to this pull request"
 expect_workflow_contains "sort_by(.id)" "must select the newest Apple check deterministically"
-expect_workflow_contains "cancel-in-progress:" "must cancel superseded attempts"
+expect_workflow_contains 'group: underbark-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}' "must isolate concurrency by pull request head"
+expect_workflow_contains "cancel-in-progress: true" "must cancel duplicate attempts for one head"
 expect_workflow_excludes "types: [" "must not claim unsupported ruleset-workflow event filters"
 expect_workflow_excludes "macos-" "must not allocate a GitHub-hosted macOS runner"
 expect_workflow_excludes "xcodebuild" "must not run Xcode"

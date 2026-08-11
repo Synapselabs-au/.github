@@ -9,8 +9,8 @@ on:
   pull_request:
 
 concurrency:
-  group: underbark-pr-gate-${{ github.event.pull_request.number }}
-  cancel-in-progress: ${{ github.run_attempt == 1 }}
+  group: underbark-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
 
 jobs:
   result:
