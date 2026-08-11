@@ -1,23 +1,29 @@
 name: Underbark PR Gate
 
-permissions:
-  contents: read
-  pull-requests: read
-  checks: read
+permissions: {}
 
 on:
   pull_request:
 
 concurrency:
-  group: underbark-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: underbark-pr-gate-${{ github.repository }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  result:
-    name: Underbark PR Gate result
+  classify:
+    name: Classify trusted verification
     if: ${{ github.repository == 'Synapselabs-au/Underbark' }}
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 10
+    outputs:
+      classification: ${{ steps.classify.outputs.classification }}
+      backend_functions: ${{ steps.classify.outputs.backend_functions }}
+      backend_database: ${{ steps.classify.outputs.backend_database }}
+      ancestry_sync: ${{ steps.classify.outputs.ancestry_sync }}
+      ancestry_main_sha: ${{ steps.classify.outputs.ancestry_main_sha }}
     steps:
       - name: Check out trusted gate
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -27,7 +33,7 @@ jobs:
           path: .gate
           persist-credentials: false
 
-      - name: Check out candidate without credentials
+      - name: Check out candidate without persisted credentials
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -36,10 +42,11 @@ jobs:
           path: .candidate
           persist-credentials: false
 
-      - name: Enforce risk-tiered verification
+      - name: Classify exact diff
+        id: classify
         env:
-          APPLE_APP_ID: "117084"
-          APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS
+          EVENT_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          EVENT_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
           EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -48,8 +55,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-
-          bash .gate/scripts/test-classify-underbark-pr.sh
 
           read_live_tuple() {
             read -r LIVE_HEAD LIVE_BASE_REF LIVE_STATE < <(gh api \
@@ -79,37 +84,31 @@ jobs:
             current_main="$(gh api \
               "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
               --jq '.object.sha')"
-            if [ "$current_main" != "$expected_main" ]; then
+            if [[ "$current_main" != "$expected_main" ]]; then
               echo "Refusing ancestry evidence after main moved." >&2
               exit 1
             fi
           }
 
           require_release_context() {
-            if [ "$EVENT_AUTHOR_TYPE" != "Bot" \
-              || "$EVENT_HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
-              echo "Ancestry syncs must be App-authored from the protected repository." >&2
-              exit 1
-            fi
-
             release_locks="$(gh api -X GET search/issues \
               -f "q=repo:${GITHUB_REPOSITORY} is:pr label:release-in-flight")"
-            if [ "$(jq -r '.total_count' <<<"$release_locks")" -ne 1 ]; then
+            if [[ "$(jq -r '.total_count' <<<"$release_locks")" -ne 1 ]]; then
               echo "Expected exactly one release-in-flight pull request." >&2
               exit 1
             fi
             release_lock_number="$(jq -r '.items[0].number' <<<"$release_locks")"
-
             release_pr="$(gh api \
               "repos/${GITHUB_REPOSITORY}/pulls/${release_lock_number}")"
+            release_merged_at="$(jq -r '.merged_at // empty' <<<"$release_pr")"
+            release_base_ref="$(jq -r '.base.ref' <<<"$release_pr")"
             release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$release_pr")"
-            if [ "$(jq -r '.merged_at // empty' <<<"$release_pr")" = "" \
-              || [ "$(jq -r '.base.ref' <<<"$release_pr")" != "dev" \
-              || [ -z "$release_merge_sha" ]; then
-              echo "The release-in-flight marker must identify a merged release PR into dev." >&2
-              exit 1
-            fi
 
+            .gate/scripts/verify-underbark-release-context.sh \
+              "$EVENT_AUTHOR_LOGIN" "$EVENT_AUTHOR_ID" "$EVENT_AUTHOR_TYPE" \
+              "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
+              "$LIVE_BASE_REF" "$release_merged_at" "$release_base_ref" \
+              "$release_merge_sha"
             git -C .candidate cat-file -e "${release_merge_sha}^{commit}"
             if ! git -C .candidate merge-base --is-ancestor \
               "$release_merge_sha" "$LIVE_BASE_SHA"; then
@@ -122,12 +121,9 @@ jobs:
           git -C .candidate cat-file -e "${LIVE_BASE_SHA}^{commit}"
           git -C .candidate cat-file -e "${LIVE_HEAD}^{commit}"
           git -C .candidate diff --check "${LIVE_BASE_SHA}...${LIVE_HEAD}"
+          python3 .gate/scripts/verify-underbark-supabase-config.py .candidate/supabase/config.toml
 
           if git -C .candidate diff --quiet "${LIVE_BASE_SHA}...${LIVE_HEAD}"; then
-            if [ "$LIVE_BASE_REF" != "dev" ]; then
-              echo "An empty diff is accepted only for an exact Underbark dev ancestry sync." >&2
-              exit 1
-            fi
             require_release_context
             LIVE_MAIN_SHA="$(gh api \
               "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
@@ -137,55 +133,255 @@ jobs:
             require_current_tuple
             require_current_main "$LIVE_MAIN_SHA"
             require_release_context
+            {
+              echo "classification=static"
+              echo "backend_functions=0"
+              echo "backend_database=0"
+              echo "ancestry_sync=1"
+              echo "ancestry_main_sha=$LIVE_MAIN_SHA"
+            } >>"$GITHUB_OUTPUT"
             echo "Tree-identical release ancestry sync verified. Apple compute is not required."
             exit 0
           fi
 
-          classification="$(
+          classification_record="$(
             git -C .candidate diff --name-status --no-renames -z \
               "${LIVE_BASE_SHA}...${LIVE_HEAD}" \
               | .gate/scripts/classify-underbark-pr.sh
           )"
-          echo "Trusted verification classification: ${classification}."
+          IFS=$'\t' read -r classification backend_functions backend_database \
+            <<<"$classification_record"
 
           case "$classification" in
-            static)
-              require_current_tuple
-              echo "Static verification is complete. Apple compute is not required."
-              exit 0
-              ;;
-            blocked)
-              echo "The diff contains an unclassified path. Update the trusted gate before merge." >&2
-              exit 1
-              ;;
-            apple)
-              ;;
+            static|backend|apple|apple-backend|blocked) ;;
             *)
               echo "Unexpected verification classification: ${classification}." >&2
               exit 1
               ;;
           esac
+          case "$backend_functions:$backend_database" in
+            0:0|0:1|1:0|1:1) ;;
+            *)
+              echo "Invalid backend verification flags." >&2
+              exit 1
+              ;;
+          esac
+          if [[ "$classification_record" != "$classification"$'\t'"$backend_functions"$'\t'"$backend_database" ]]; then
+            echo "Invalid trusted classifier output." >&2
+            exit 1
+          fi
+          if [[ "$classification" == "blocked" ]]; then
+            echo "The diff contains an unclassified path. Update the trusted gate before merge." >&2
+            exit 1
+          fi
+
+          {
+            echo "classification=$classification"
+            echo "backend_functions=$backend_functions"
+            echo "backend_database=$backend_database"
+            echo "ancestry_sync=0"
+            echo "ancestry_main_sha="
+          } >>"$GITHUB_OUTPUT"
+          echo "Trusted verification classification: $classification."
+
+  functions:
+    name: Verify backend functions
+    needs: classify
+    if: ${{ needs.classify.result == 'success' && needs.classify.outputs.backend_functions == '1' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out candidate without persisted credentials
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .candidate
+          persist-credentials: false
+
+      - name: Verify isolated Supabase functions
+        working-directory: .candidate
+        run: |
+          set -euo pipefail
+
+          container="underbark-deno-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          image="denoland/deno:2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463"
+          cleanup() {
+            original_status="$?"
+            trap - EXIT
+            cleanup_status=0
+            timeout 2m docker rm -f "$container" >/dev/null 2>&1 || cleanup_status="$?"
+            if [[ "$original_status" -ne 0 ]]; then
+              exit "$original_status"
+            fi
+            exit "$cleanup_status"
+          }
+          trap cleanup EXIT
+
+          timeout 5m docker pull "$image"
+          timeout 1m docker create \
+            --pull never \
+            --name "$container" \
+            --network bridge \
+            --workdir /workspace \
+            "$image" \
+            eval 'setInterval(() => {}, 3600000)'
+          timeout 1m docker start "$container" >/dev/null
+          timeout 1m docker cp supabase/. "$container:/workspace/supabase"
+          timeout 10m docker exec "$container" sh -euc '
+            if find supabase/functions -type l -print -quit | grep -q .; then
+              echo "Symlinks are not allowed under supabase/functions." >&2
+              exit 1
+            fi
+            find supabase/functions -type f -name "*.ts" -print0 | LC_ALL=C sort -z > /tmp/underbark-typescript-files
+            test -s /tmp/underbark-typescript-files
+            xargs -0 deno fmt --check < /tmp/underbark-typescript-files
+            xargs -0 deno check --frozen --config supabase/functions/deno.json < /tmp/underbark-typescript-files
+            find supabase/functions -type f \( -name "*_test.ts" -o -name "*.test.ts" \) -print0 | LC_ALL=C sort -z > /tmp/underbark-deno-test-files
+            test -s /tmp/underbark-deno-test-files
+            xargs -0 deno test --frozen --config supabase/functions/deno.json < /tmp/underbark-deno-test-files
+          '
+
+  database:
+    name: Verify backend database
+    needs: classify
+    if: ${{ needs.classify.result == 'success' && needs.classify.outputs.backend_database == '1' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Check out candidate without persisted credentials
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .candidate
+          persist-credentials: false
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1
+        with:
+          version: 2.113.0
+
+      - name: Verify disposable Supabase database
+        working-directory: .candidate
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            original_status="$?"
+            trap - EXIT
+            cleanup_status=0
+            timeout 5m supabase stop --workdir . --no-backup || cleanup_status="$?"
+            if [[ "$original_status" -ne 0 ]]; then
+              exit "$original_status"
+            fi
+            exit "$cleanup_status"
+          }
+          trap cleanup EXIT
+
+          expected_postgres_digest="public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459"
+          expected_postgres_tag="public.ecr.aws/supabase/postgres:17.6.1.158"
+          timeout 10m docker pull "$expected_postgres_digest"
+          preflight_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
+          timeout 1m docker tag "$preflight_image_id" "$expected_postgres_tag"
+          tagged_image_id="$(timeout 1m docker image inspect "$expected_postgres_tag" --format '{{.Id}}')"
+          if [[ "$tagged_image_id" != "$preflight_image_id" ]]; then
+            echo "The Supabase CLI Postgres tag does not resolve to the trusted image." >&2
+            exit 1
+          fi
+          timeout 15m supabase db start --workdir .
+          running_image_id="$(timeout 1m docker inspect --format '{{.Image}}' supabase_db_underbark)"
+          mapfile -t running_repo_digests < <(timeout 1m docker image inspect "$running_image_id" --format '{{range .RepoDigests}}{{println .}}{{end}}' | LC_ALL=C sort -u)
+          digest_match=0
+          for repo_digest in "${running_repo_digests[@]}"; do
+            if [[ "$repo_digest" == "$expected_postgres_digest" ]]; then
+              digest_match=1
+            fi
+          done
+          if [[ "$running_image_id" != "$preflight_image_id" || "$digest_match" -ne 1 ]]; then
+            echo "The disposable Postgres image does not match the trusted digest." >&2
+            exit 1
+          fi
+          timeout 1m docker exec supabase_db_underbark mkdir -p /tmp/underbark-tests
+          timeout 1m docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests
+          timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c '
+            if find /tmp/underbark-tests -type l -print -quit | grep -q .; then
+              echo "Symlinks are not allowed under supabase/tests." >&2
+              exit 1
+            fi
+            find /tmp/underbark-tests -type f -name "*.sql" -print0 | LC_ALL=C sort -z > /tmp/underbark-sql-files
+            test -s /tmp/underbark-sql-files
+            while IFS= read -r -d "" suite; do
+              psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"
+            done < /tmp/underbark-sql-files
+          '
+
+  apple:
+    name: Verify exact-head Apple result
+    needs: classify
+    if: ${{ needs.classify.result == 'success' && (needs.classify.outputs.classification == 'apple' || needs.classify.outputs.classification == 'apple-backend') }}
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - name: Poll exact-head Apple verification
+        env:
+          APPLE_APP_ID: "117084"
+          APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          require_current_tuple() {
+            read -r live_head live_base_ref live_state < <(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv')
+            live_base_sha="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${live_base_ref}" \
+              --jq '.object.sha')"
+            live_merge_base="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/compare/${live_base_sha}...${live_head}" \
+              --jq '.merge_base_commit.sha')"
+            if [[ "$live_head" != "$EVENT_HEAD" \
+              || "$live_base_ref" != "$EVENT_BASE_REF" \
+              || "$live_state" != "open" \
+              || "$live_merge_base" != "$live_base_sha" ]]; then
+              echo "Refusing stale, closed, wrong-base, or behind pull request state." >&2
+              exit 1
+            fi
+            LIVE_HEAD="$live_head"
+          }
 
           for attempt in $(seq 1 120); do
             require_current_tuple
-            check_json="$(gh api \
+            check_pages="$(gh api --paginate --slurp \
               -H "Accept: application/vnd.github+json" \
               "repos/${GITHUB_REPOSITORY}/commits/${LIVE_HEAD}/check-runs?per_page=100")"
             check="$(jq -c \
               --arg name "$APPLE_CHECK_NAME" \
               --argjson app_id "$APPLE_APP_ID" \
               --argjson pr_number "$PR_NUMBER" \
-              '[.check_runs[]
+              '[.[].check_runs[]
                 | select(.name == $name and .app.id == $app_id)
                 | select(any(.pull_requests[]?; .number == $pr_number))]
                | sort_by(.id)
-               | last // empty' <<<"$check_json")"
+               | last // empty' <<<"$check_pages")"
 
-            if [ -n "$check" ]; then
+            if [[ -n "$check" ]]; then
               status="$(jq -r '.status' <<<"$check")"
               conclusion="$(jq -r '.conclusion // ""' <<<"$check")"
-              if [ "$status" = "completed" ]; then
-                if [ "$conclusion" != "success" ]; then
+              if [[ "$status" == "completed" ]]; then
+                if [[ "$conclusion" != "success" ]]; then
                   echo "Exact Apple verification completed with ${conclusion:-no conclusion}." >&2
                   exit 1
                 fi
@@ -201,3 +397,187 @@ jobs:
 
           echo "Timed out waiting for exact-head Apple verification." >&2
           exit 1
+
+  result:
+    name: Underbark PR Gate result
+    if: ${{ always() && github.repository == 'Synapselabs-au/Underbark' }}
+    needs: [classify, functions, database, apple]
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted gate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: Synapselabs-au/.github
+          ref: ${{ github.workflow_sha }}
+          path: .gate
+          persist-credentials: false
+
+      - name: Check out candidate without persisted credentials
+        if: ${{ needs.classify.outputs.ancestry_sync == '1' }}
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: .candidate
+          persist-credentials: false
+
+      - name: Validate final live result
+        env:
+          ANCESTRY_MAIN_SHA: ${{ needs.classify.outputs.ancestry_main_sha }}
+          ANCESTRY_SYNC: ${{ needs.classify.outputs.ancestry_sync }}
+          BACKEND_DATABASE: ${{ needs.classify.outputs.backend_database }}
+          BACKEND_FUNCTIONS: ${{ needs.classify.outputs.backend_functions }}
+          CLASSIFICATION: ${{ needs.classify.outputs.classification }}
+          DATABASE_RESULT: ${{ needs.database.result }}
+          EVENT_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          EVENT_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
+          EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          FUNCTIONS_RESULT: ${{ needs.functions.result }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          APPLE_RESULT: ${{ needs.apple.result }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+        run: |
+          set -euo pipefail
+
+          require_lane_result() {
+            selected="$1"
+            actual="$2"
+            lane="$3"
+            if [[ "$selected" == "1" && "$actual" != "success" ]]; then
+              echo "Selected ${lane} verification did not succeed: ${actual}." >&2
+              exit 1
+            fi
+            if [[ "$selected" == "0" && "$actual" != "skipped" ]]; then
+              echo "Unselected ${lane} verification was not skipped: ${actual}." >&2
+              exit 1
+            fi
+          }
+
+          if [[ "$CLASSIFY_RESULT" != "success" ]]; then
+            echo "Trusted classification did not succeed: ${CLASSIFY_RESULT}." >&2
+            exit 1
+          fi
+          case "$CLASSIFICATION:$BACKEND_FUNCTIONS:$BACKEND_DATABASE:$ANCESTRY_SYNC" in
+            static:0:0:0|static:0:0:1|backend:1:0:0|backend:0:1:0|backend:1:1:0|apple:0:0:0|apple-backend:1:0:0|apple-backend:0:1:0|apple-backend:1:1:0) ;;
+            *)
+              echo "Invalid terminal classifier outputs." >&2
+              exit 1
+              ;;
+          esac
+          if [[ "$ANCESTRY_SYNC" == "1" && -z "$ANCESTRY_MAIN_SHA" \
+            || "$ANCESTRY_SYNC" == "0" && -n "$ANCESTRY_MAIN_SHA" ]]; then
+            echo "Invalid terminal ancestry outputs." >&2
+            exit 1
+          fi
+          require_lane_result "$BACKEND_FUNCTIONS" "$FUNCTIONS_RESULT" "function"
+          require_lane_result "$BACKEND_DATABASE" "$DATABASE_RESULT" "database"
+          if [[ "$CLASSIFICATION" == "apple" || "$CLASSIFICATION" == "apple-backend" ]]; then
+            require_lane_result 1 "$APPLE_RESULT" "Apple"
+          else
+            require_lane_result 0 "$APPLE_RESULT" "Apple"
+          fi
+
+          if [[ "$ANCESTRY_SYNC" == "1" ]]; then
+            read -r inspected_head inspected_base_ref inspected_state < <(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv')
+            inspected_base_sha="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${inspected_base_ref}" \
+              --jq '.object.sha')"
+            inspected_merge_base="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/compare/${inspected_base_sha}...${inspected_head}" \
+              --jq '.merge_base_commit.sha')"
+            if [[ "$inspected_head" != "$EVENT_HEAD" \
+              || "$inspected_base_ref" != "$EVENT_BASE_REF" \
+              || "$inspected_state" != "open" \
+              || "$inspected_merge_base" != "$inspected_base_sha" ]]; then
+              echo "Refusing stale ancestry inputs." >&2
+              exit 1
+            fi
+            inspected_main="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha')"
+            if [[ "$inspected_main" != "$ANCESTRY_MAIN_SHA" ]]; then
+              echo "Refusing ancestry success after main moved." >&2
+              exit 1
+            fi
+            inspected_release_locks="$(gh api -X GET search/issues \
+              -f "q=repo:${GITHUB_REPOSITORY} is:pr label:release-in-flight")"
+            if [[ "$(jq -r '.total_count' <<<"$inspected_release_locks")" -ne 1 ]]; then
+              echo "Expected exactly one release-in-flight pull request." >&2
+              exit 1
+            fi
+            inspected_release_number="$(jq -r '.items[0].number' <<<"$inspected_release_locks")"
+            inspected_release_pr="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${inspected_release_number}")"
+            inspected_release_merged_at="$(jq -r '.merged_at // empty' <<<"$inspected_release_pr")"
+            inspected_release_base_ref="$(jq -r '.base.ref' <<<"$inspected_release_pr")"
+            inspected_release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$inspected_release_pr")"
+            .gate/scripts/verify-underbark-release-context.sh \
+              "$EVENT_AUTHOR_LOGIN" "$EVENT_AUTHOR_ID" "$EVENT_AUTHOR_TYPE" \
+              "$EVENT_HEAD_REPO" "$GITHUB_REPOSITORY" \
+              "$inspected_base_ref" "$inspected_release_merged_at" \
+              "$inspected_release_base_ref" "$inspected_release_merge_sha"
+            git -C .candidate cat-file -e "${inspected_release_merge_sha}^{commit}"
+            git -C .candidate merge-base --is-ancestor \
+              "$inspected_release_merge_sha" "$inspected_base_sha"
+            .gate/scripts/verify-underbark-ancestry-sync.sh \
+              .candidate "$inspected_base_sha" "$inspected_head" "$inspected_main"
+          fi
+
+          read -r final_head final_base_ref final_state < <(gh api \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '[.head.sha, .base.ref, .state] | @tsv')
+          final_base_sha="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/git/ref/heads/${final_base_ref}" \
+            --jq '.object.sha')"
+          final_merge_base="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/compare/${final_base_sha}...${final_head}" \
+            --jq '.merge_base_commit.sha')"
+          if [[ "$final_head" != "$EVENT_HEAD" \
+            || "$final_base_ref" != "$EVENT_BASE_REF" \
+            || "$final_state" != "open" \
+            || "$final_merge_base" != "$final_base_sha" ]]; then
+            echo "Refusing success after pull request state changed." >&2
+            exit 1
+          fi
+
+          if [[ "$ANCESTRY_SYNC" == "1" ]]; then
+            final_main="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha')"
+            final_release_locks="$(gh api -X GET search/issues \
+              -f "q=repo:${GITHUB_REPOSITORY} is:pr label:release-in-flight")"
+            if [[ "$(jq -r '.total_count' <<<"$final_release_locks")" -ne 1 ]]; then
+              echo "The final release reservation count changed." >&2
+              exit 1
+            fi
+            final_release_number="$(jq -r '.items[0].number' <<<"$final_release_locks")"
+            final_release_pr="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${final_release_number}")"
+            final_release_merged_at="$(jq -r '.merged_at // empty' <<<"$final_release_pr")"
+            final_release_base_ref="$(jq -r '.base.ref' <<<"$final_release_pr")"
+            final_release_merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$final_release_pr")"
+            if [[ "$final_head" != "$inspected_head" \
+              || "$final_base_sha" != "$inspected_base_sha" \
+              || "$final_main" != "$inspected_main" \
+              || "$final_main" != "$ANCESTRY_MAIN_SHA" \
+              || "$final_release_number" != "$inspected_release_number" \
+              || "$final_release_merged_at" != "$inspected_release_merged_at" \
+              || "$final_release_base_ref" != "$inspected_release_base_ref" \
+              || "$final_release_merge_sha" != "$inspected_release_merge_sha" ]]; then
+              echo "Refusing ancestry success after final live state changed." >&2
+              exit 1
+            fi
+          fi
+
+          echo "Final exact pull request tuple and selected verification results verified."
