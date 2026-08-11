@@ -3,7 +3,26 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 classifier="${script_dir}/classify-underbark-pr.sh"
+workflow="${script_dir}/../.github/workflows/underbark-risk-tiered-pr-gate.yml"
 failures=0
+
+expect_workflow_contains() {
+  pattern="$1"
+  description="$2"
+  if ! grep -Fq -- "$pattern" "$workflow"; then
+    echo "FAIL: workflow ${description}" >&2
+    failures=$((failures + 1))
+  fi
+}
+
+expect_workflow_excludes() {
+  pattern="$1"
+  description="$2"
+  if grep -Fq -- "$pattern" "$workflow"; then
+    echo "FAIL: workflow ${description}" >&2
+    failures=$((failures + 1))
+  fi
+}
 
 expect_classification() {
   expected="$1"
@@ -66,6 +85,25 @@ expect_classification blocked "mixed Apple and unknown" M Recovr/App.swift A too
 expect_classification blocked "empty diff"
 
 expect_failure "missing path in status pair" M
+
+job_count="$(grep -c '^    runs-on:' "$workflow")"
+if [ "$job_count" -ne 1 ]; then
+  echo "FAIL: workflow expected one job, found ${job_count}" >&2
+  failures=$((failures + 1))
+fi
+
+expect_workflow_contains "name: Underbark PR Gate result" "must keep the stable required-check name"
+expect_workflow_contains "runs-on: ubuntu-latest" "must use the cheap Linux runner"
+expect_workflow_contains 'ref: ${{ github.workflow_sha }}' "must bind trusted code to the workflow source SHA"
+expect_workflow_contains "git -C .candidate diff --name-status --no-renames -z" "must classify the exact diff"
+expect_workflow_contains 'APPLE_APP_ID: "117084"' "must pin the Apple GitHub App"
+expect_workflow_contains "APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS" "must pin the Apple check name"
+expect_workflow_contains "require_current_tuple" "must reject stale pull request state"
+expect_workflow_contains "cancel-in-progress:" "must cancel superseded attempts"
+expect_workflow_excludes "macos-" "must not allocate a GitHub-hosted macOS runner"
+expect_workflow_excludes "xcodebuild" "must not run Xcode"
+expect_workflow_excludes ".candidate/scripts/" "must not execute candidate scripts"
+expect_workflow_excludes "upload-artifact" "must not upload artifacts"
 
 if [ "$failures" -ne 0 ]; then
   echo "${failures} classifier fixture(s) failed." >&2
