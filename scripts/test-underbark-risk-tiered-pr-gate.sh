@@ -170,10 +170,9 @@ if awk '
   /^      - name: / { finish_step() }
   {
     candidate_line = $0
-    gsub(/\"/, "", candidate_line)
-    gsub(sprintf("%c", 39), "", candidate_line)
+    gsub(/[[:space:]\"\047]/, "", candidate_line)
   }
-  index(candidate_line, "working-directory: .candidate") || index(candidate_line, "working-directory: .candidate/.") || index(candidate_line, "working-directory: ./.candidate") || index(candidate_line, "working-directory: ./.candidate/.") { candidate_directory = 1 }
+  candidate_line ~ /^working-directory:(\.\/)?\.candidate(\/\.)*\/?(#.*)?$/ { candidate_directory = 1 }
   index($0, "scripts/") { candidate_script = 1 }
   END { finish_step(); exit !bad }
 ' "$workflow"; then
