@@ -8,7 +8,7 @@ failures=0
 bash "${script_dir}/test-classify-underbark-pr.sh"
 bash "${script_dir}/test-verify-underbark-release-context.sh"
 
-if ! ruby -ryaml -rshellwords - "$workflow" <<'RUBY'
+if ! ruby -ryaml - "$workflow" <<'RUBY'
 def reject_duplicate_keys(node, path = "$")
   case node
   when Psych::Nodes::Stream, Psych::Nodes::Document, Psych::Nodes::Sequence
@@ -71,8 +71,8 @@ def run_scripts(job)
   job.fetch("steps").map { |step| step["run"] }.compact
 end
 
-def logical_commands(script)
-  commands = []
+def logical_lines(script)
+  lines = []
   buffer = ""
   script.each_line do |raw_line|
     line = raw_line.strip
@@ -81,85 +81,100 @@ def logical_commands(script)
     if buffer.end_with?("\\")
       buffer = buffer[0...-1].rstrip
     else
-      commands << buffer unless buffer.empty?
+      lines << buffer unless buffer.empty?
       buffer = ""
     end
   end
-  commands << buffer unless buffer.empty?
-  commands
+  lines << buffer unless buffer.empty?
+  lines
 end
 
-def docker_invocations(commands)
-  commands.map do |command|
-    tokens = Shellwords.split(command)
-    docker_index = tokens.index("docker")
-    next unless docker_index
-    [command, tokens[docker_index + 1], tokens[(docker_index + 2)..-1] || []]
-  rescue ArgumentError => error
-    raise "cannot parse Docker command #{command.inspect}: #{error.message}"
-  end.compact
-end
+def shell_statements(script)
+  logical_lines(script).flat_map do |line|
+    statements = []
+    buffer = +""
+    quote = nil
+    index = 0
 
-def option_value(args, index, name)
-  token = args[index]
-  return token.split("=", 2)[1] if token.start_with?("#{name}=")
-  args[index + 1] if token == name
-end
-
-def docker_options(args)
-  value_options = %w[
-    --entrypoint --env --env-file --ipc --mount --name --net --network
-    --cap-add --cgroupns --device --device-cgroup-rule --pid --pull
-    --security-opt --userns --uts --volume --volumes-from --workdir -e -v
-  ]
-  options = []
-  index = 0
-  while index < args.length && args[index].start_with?("-")
-    token = args[index]
-    options << token
-    if !token.include?("=") && value_options.include?(token)
-      options << args[index + 1] if args[index + 1]
-      index += 2
-    else
-      index += 1
+    emit = lambda do |separator|
+      command = buffer.strip
+      statements << [command, separator] unless command.empty?
+      buffer.clear
     end
-  end
-  options
-end
 
-def reject_unsafe_docker_options(commands)
-  docker_invocations(commands).each do |command, subcommand, args|
-    raise "Docker socket exposed in #{command}" if command.include?("/var/run/docker.sock") || command.include?("/run/docker.sock")
+    while index < line.length
+      character = line[index]
 
-    options = docker_options(args)
-    options.each_with_index do |token, index|
-      if token == "--mount" || token.start_with?("--mount=") ||
-          token == "--volume" || token.start_with?("--volume=")
-        raise "host mount allowed in #{command}"
-      end
-      if token == "--env" || token.start_with?("--env=") ||
-          token == "--env-file" || token.start_with?("--env-file=") ||
-          token == "-e" || token.start_with?("-e")
-        raise "host environment allowed in #{command}"
-      end
-      if token == "--privileged" || token.start_with?("--privileged=")
-        raise "privileged Docker execution allowed in #{command}"
+      if quote == "'"
+        buffer << character
+        quote = nil if character == "'"
+        index += 1
+        next
       end
 
-      if %w[--cap-add --device --device-cgroup-rule --mount --security-opt --volume --volumes-from].any? { |option| token == option || token.start_with?("#{option}=") }
-        raise "Docker isolation escape option allowed in #{command}"
+      if quote == '"'
+        buffer << character
+        if character == "\\"
+          index += 1
+          raise "unterminated shell escape in #{line.inspect}" if index >= line.length
+          buffer << line[index]
+        elsif character == '"'
+          quote = nil
+        end
+        index += 1
+        next
       end
 
-      %w[--cgroupns --pid --network --net --ipc --uts --userns].each do |option|
-        value = option_value(options, index, option)
-        raise "host namespace allowed in #{command}" if value == "host"
-      end
-
-      if %w[create run].include?(subcommand) && (token == "-v" || token.start_with?("-v"))
-        raise "short host volume allowed in #{command}"
+      case character
+      when "'", '"'
+        quote = character
+        buffer << character
+        index += 1
+      when "\\"
+        buffer << character
+        index += 1
+        raise "unterminated shell escape in #{line.inspect}" if index >= line.length
+        buffer << line[index]
+        index += 1
+      when ";"
+        emit.call(:semicolon)
+        index += 1
+      when "&"
+        if buffer.end_with?("<", ">") || line[index + 1] == ">"
+          buffer << character
+          index += 1
+        elsif line[index + 1] == "&"
+          emit.call(:and_if)
+          index += 2
+        else
+          emit.call(:background)
+          index += 1
+        end
+      when "|"
+        if line[index + 1] == "|"
+          emit.call(:or_if)
+          index += 2
+        else
+          emit.call(:pipe)
+          index += 1
+        end
+      else
+        buffer << character
+        index += 1
       end
     end
+
+    raise "unterminated shell quote in #{line.inspect}" if quote
+    emit.call(:newline)
+    statements
   end
+end
+
+def require_exact_command_contract(label, statements, pattern, expected)
+  actual = statements.select { |command, _separator| command.match?(pattern) }
+  return if actual == expected
+
+  raise "candidate #{label} command contract changed: #{actual.inspect}"
 end
 
 def validate_candidate_boundaries(workflow)
@@ -186,30 +201,53 @@ def validate_candidate_boundaries(workflow)
     raise "#{name} exposes a host workflow control file" if %w[GITHUB_ENV GITHUB_PATH GITHUB_OUTPUT].any? { |key| body.include?(key) }
   end
 
-  all_commands = jobs.values.flat_map { |job| run_scripts(job).flat_map { |script| logical_commands(script) } }
-  candidate_commands = %w[functions database].flat_map do |name|
-    run_scripts(jobs.fetch(name)).flat_map { |script| logical_commands(script) }
-  end
-  reject_unsafe_docker_options(candidate_commands)
+  trusted_body = %w[classify apple result].map { |name| serialized(jobs.fetch(name)) }.join("\n")
+  raise "candidate Deno command contract changed: trusted job invocation" if trusted_body.match?(/\bdeno (?:fmt|check|test)\b/)
+  raise "candidate psql command contract changed: trusted job invocation" if trusted_body.match?(/\bpsql(?:\s|$)/)
+  raise "candidate Docker command contract changed: trusted job invocation" if trusted_body.match?(/\bdocker\b/)
 
-  deno_commands = all_commands.select { |command| command =~ /\bdeno (fmt|check|test)\b/ }
-  raise "expected exactly three candidate Deno commands" unless deno_commands.length == 3
-  deno_commands.each do |command|
-    unless command =~ /\Atimeout 10m docker exec "\$container" deno (fmt|check|test)\b/
-      raise "candidate Deno escaped the intended container: #{command}"
-    end
+  statements = %w[functions database].flat_map do |name|
+    job = jobs.fetch(name)
+    run_scripts(job).flat_map { |script| shell_statements(script) }
   end
 
-  psql_commands = all_commands.select { |command| command =~ /\bpsql(?:\s|$)/ }
-  raise "expected exactly one psql command" unless psql_commands.length == 1
-  unless psql_commands.first =~ /\Atimeout 10m docker exec supabase_db_underbark bash -euo pipefail -c .*\bpsql\b/
-    raise "psql escaped the intended database container: #{psql_commands.first}"
-  end
+  expected_deno = [
+    ['timeout 10m docker exec "$container" deno fmt --check supabase/functions', :newline],
+    ['timeout 10m docker exec "$container" deno check --config supabase/functions/deno.json supabase/functions/*/index.ts', :newline],
+    ['timeout 10m docker exec "$container" deno test --config supabase/functions/deno.json supabase/functions', :newline],
+  ]
+  require_exact_command_contract(
+    "Deno",
+    statements,
+    /\bdeno (?:fmt|check|test)\b/,
+    expected_deno,
+  )
+
+  expected_psql = [
+    ['timeout 10m docker exec supabase_db_underbark bash -euo pipefail -c \'for suite in /tmp/underbark-tests/*.sql; do psql "postgresql://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f "$suite"; done\'', :newline],
+  ]
+  require_exact_command_contract("psql", statements, /\bpsql(?:\s|$)/, expected_psql)
+
+  expected_docker = [
+    ['timeout 2m docker rm -f "$container" >/dev/null 2>&1', :or_if],
+    ['timeout 5m docker pull "$image"', :newline],
+    ['timeout 1m docker create --pull never --name "$container" --network bridge --workdir /workspace "$image" eval \'setInterval(() => {}, 3600000)\'', :newline],
+    ['timeout 1m docker start "$container" >/dev/null', :newline],
+    ['timeout 1m docker cp supabase/. "$container:/workspace/supabase"', :newline],
+    *expected_deno,
+    ['timeout 1m docker exec supabase_db_underbark mkdir -p /tmp/underbark-tests', :newline],
+    ['timeout 1m docker cp supabase/tests/. supabase_db_underbark:/tmp/underbark-tests', :newline],
+    *expected_psql,
+  ]
+  require_exact_command_contract("Docker", statements, /\bdocker\b/, expected_docker)
 end
 
-def expect_boundary_rejection(label, workflow)
+def expect_boundary_rejection(label, workflow, expected_message)
   validate_candidate_boundaries(workflow)
-rescue RuntimeError
+rescue RuntimeError => error
+  unless error.message.match?(expected_message)
+    raise "negative boundary fixture was rejected for the wrong reason: #{label}: #{error.message.inspect}"
+  end
   return
 else
   raise "negative boundary fixture was accepted: #{label}"
@@ -219,26 +257,58 @@ validate_candidate_boundaries(workflow)
 
 fixture = Marshal.load(Marshal.dump(workflow))
 fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\ndeno test supabase/functions\n" }
-expect_boundary_rejection("host Deno", fixture)
+expect_boundary_rejection("host Deno", fixture, /\Acandidate Deno command contract changed:/)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+deno_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("deno fmt") }
+raise "same-line Deno fixture construction failed" unless deno_step["run"].sub!(
+  'timeout 10m docker exec "$container" deno fmt --check supabase/functions',
+  'timeout 10m docker exec "$container" deno fmt --check supabase/functions; deno test supabase/functions',
+)
+expect_boundary_rejection("same-line host Deno", fixture, /\Acandidate Deno command contract changed:/)
 
 fixture = Marshal.load(Marshal.dump(workflow))
 deno_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("deno fmt") }
 deno_step["run"].sub!('docker exec "$container" deno fmt', 'docker exec wrong-container deno fmt')
-expect_boundary_rejection("wrong Deno container", fixture)
+expect_boundary_rejection("wrong Deno container", fixture, /\Acandidate Deno command contract changed:/)
 
 fixture = Marshal.load(Marshal.dump(workflow))
 fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\npsql postgresql://localhost/postgres -c 'select 1'\n" }
-expect_boundary_rejection("host psql", fixture)
+expect_boundary_rejection("host psql", fixture, /\Acandidate psql command contract changed:/)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+database_step = fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"].to_s.include?("psql") }
+raise "same-line psql fixture construction failed" unless database_step["run"].sub!(
+  "done'\n",
+  "done' && psql postgresql://localhost/postgres -c 'select 1'\n",
+)
+expect_boundary_rejection("same-line host psql", fixture, /\Acandidate psql command contract changed:/)
 
 fixture = Marshal.load(Marshal.dump(workflow))
 database_step = fixture.fetch("jobs").fetch("database").fetch("steps").find { |step| step["run"].to_s.include?("psql") }
 database_step["run"].sub!("docker exec supabase_db_underbark bash", "docker exec wrong-container bash")
-expect_boundary_rejection("wrong psql container", fixture)
+expect_boundary_rejection("wrong psql container", fixture, /\Acandidate psql command contract changed:/)
 
 fixture = Marshal.load(Marshal.dump(workflow))
 checkout = fixture.fetch("jobs").values.flat_map { |job| job.fetch("steps") }.find { |step| step.fetch("with", {})["path"] == ".candidate" }
 checkout.fetch("with").delete("persist-credentials")
-expect_boundary_rejection("persisted checkout credentials", fixture)
+expect_boundary_rejection("persisted checkout credentials", fixture, /\Acandidate checkout persists credentials\z/)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+functions_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("docker pull") }
+raise "second Docker fixture construction failed" unless functions_step["run"].sub!(
+  'timeout 5m docker pull "$image"',
+  'timeout 5m docker pull "$image"; docker run --privileged alpine true',
+)
+expect_boundary_rejection("unsafe Docker after safe Docker", fixture, /\Acandidate Docker command contract changed:/)
+
+fixture = Marshal.load(Marshal.dump(workflow))
+functions_step = fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"].to_s.include?("docker create") }
+raise "separate-value Docker fixture construction failed" unless functions_step["run"].sub!(
+  "  --name \"$container\" \\\n  --network bridge \\\n",
+  "  --name \"$container\" \\\n  --label underbark=test \\\n  --privileged \\\n  --network bridge \\\n",
+)
+expect_boundary_rejection("unsafe Docker after separate-value option", fixture, /\Acandidate Docker command contract changed:/)
 
 unsafe_docker_fixtures = {
   "mount" => "docker run --mount type=bind,src=/tmp,dst=/work alpine true",
@@ -264,7 +334,7 @@ unsafe_docker_fixtures = {
 unsafe_docker_fixtures.each do |label, command|
   fixture = Marshal.load(Marshal.dump(workflow))
   fixture.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["run"] }.tap { |step| step["run"] << "\n#{command}\n" }
-  expect_boundary_rejection(label, fixture)
+  expect_boundary_rejection(label, fixture, /\Acandidate Docker command contract changed:/)
 end
 
 token_jobs = jobs.select { |_name, job| serialized(job).include?("github.token") }.keys
