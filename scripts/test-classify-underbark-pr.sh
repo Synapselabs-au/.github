@@ -93,12 +93,17 @@ expect_classification $'blocked\t0\t0' "malformed status pair" M
 expect_classification $'blocked\t0\t0' "rename ambiguity" R100 Recovr/Old.swift Recovr/New.swift
 
 job_count="$(grep -c '^    runs-on:' "$workflow")"
-if [ "$job_count" -ne 1 ]; then
-  echo "FAIL: workflow expected one job, found ${job_count}" >&2
+if [ "$job_count" -ne 5 ]; then
+  echo "FAIL: workflow expected five isolated jobs, found ${job_count}" >&2
   failures=$((failures + 1))
 fi
 
 expect_workflow_contains "name: Underbark PR Gate result" "must keep the stable required-check name"
+stable_name_count="$(grep -c '^    name: Underbark PR Gate result$' "$workflow")"
+if [ "$stable_name_count" -ne 1 ]; then
+  echo "FAIL: workflow must expose exactly one stable required-check job" >&2
+  failures=$((failures + 1))
+fi
 expect_workflow_contains "github.repository == 'Synapselabs-au/Underbark'" "must not execute as a normal workflow in the trust repository"
 expect_workflow_contains "runs-on: ubuntu-latest" "must use the cheap Linux runner"
 expect_workflow_contains 'ref: ${{ github.workflow_sha }}' "must bind trusted code to the workflow source SHA"
@@ -108,6 +113,7 @@ expect_workflow_contains 'verify-underbark-ancestry-sync.sh' "must verify exact 
 expect_workflow_contains 'git/ref/heads/main' "must bind the ancestry sync to current main"
 expect_workflow_contains 'EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}' "must inspect ancestry-sync authorship"
 expect_workflow_contains 'EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}' "must bind ancestry syncs to the protected repository"
+expect_workflow_contains 'verify-underbark-release-context.sh' "must use executable release-context predicates"
 expect_workflow_contains 'release-in-flight' "must require the active release reservation"
 expect_workflow_contains '.total_count' "must count every active release reservation"
 expect_workflow_contains '.merged_at // empty' "must require a merged release marker"

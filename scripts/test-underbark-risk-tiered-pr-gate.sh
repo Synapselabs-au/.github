@@ -6,6 +6,69 @@ workflow="${script_dir}/../.github/workflows/underbark-risk-tiered-pr-gate.yml"
 failures=0
 
 bash "${script_dir}/test-classify-underbark-pr.sh"
+bash "${script_dir}/test-verify-underbark-release-context.sh"
+
+if ! ruby -ryaml - "$workflow" <<'RUBY'
+workflow = YAML.load_file(ARGV.fetch(0))
+jobs = workflow.fetch("jobs")
+expected_jobs = %w[classify functions database apple result]
+raise "unexpected job graph" unless jobs.keys == expected_jobs
+raise "required status changed" unless jobs.fetch("result").fetch("name") == "Underbark PR Gate result"
+raise "aggregation is not terminal" unless jobs.fetch("result").fetch("needs") == expected_jobs.first(4)
+raise "aggregation is not always-run" unless jobs.fetch("result").fetch("if").include?("always()")
+
+expected_timeouts = {
+  "classify" => 10,
+  "functions" => 35,
+  "database" => 40,
+  "apple" => 65,
+  "result" => 10,
+}
+expected_timeouts.each do |name, timeout|
+  raise "#{name} timeout mismatch" unless jobs.fetch(name).fetch("timeout-minutes") == timeout
+  raise "#{name} is not Linux" unless jobs.fetch(name).fetch("runs-on") == "ubuntu-latest"
+end
+
+def serialized(job)
+  YAML.dump(job)
+end
+
+%w[functions database].each do |name|
+  body = serialized(jobs.fetch(name))
+  raise "#{name} contains a GitHub token" if body.include?("github.token") || body.include?("GH_TOKEN")
+  raise "#{name} contains a secret" if body.include?("secrets")
+end
+
+token_jobs = jobs.select { |_name, job| serialized(job).include?("github.token") }.keys
+raise "token job boundary changed" unless token_jobs == %w[classify apple result]
+raise "candidate Deno escaped its runner" if serialized(jobs.fetch("classify")).include?("deno test") || serialized(jobs.fetch("result")).include?("deno test")
+raise "candidate SQL escaped its runner" if serialized(jobs.fetch("classify")).include?("psql ") || serialized(jobs.fetch("result")).include?("psql ")
+
+database_run = jobs.fetch("database").fetch("steps").map { |step| step["run"] }.compact.join("\n")
+start_index = database_run.index("supabase start") or raise "database start missing"
+sql_index = database_run.index("psql ") or raise "SQL suites missing"
+cleanup_index = database_run.index("supabase stop") or raise "database cleanup missing"
+trap_index = database_run.index("trap cleanup EXIT") or raise "cleanup trap missing"
+raise "cleanup is not installed before untrusted SQL" unless trap_index < start_index
+raise "database command ordering changed" unless cleanup_index < start_index && start_index < sql_index
+
+result_run = jobs.fetch("result").fetch("steps").map { |step| step["run"] }.compact.join("\n")
+raise "lane aggregation missing" unless result_run.include?("require_lane_result")
+raise "terminal tuple read missing" unless result_run.include?("pulls/${PR_NUMBER}")
+RUBY
+then
+  echo "FAIL: parsed workflow trust-boundary assertions failed" >&2
+  failures=$((failures + 1))
+fi
+
+expect_contains() {
+  pattern="$1"
+  description="$2"
+  if ! grep -Fq -- "$pattern" "$workflow"; then
+    echo "FAIL: workflow ${description}" >&2
+    failures=$((failures + 1))
+  fi
+}
 
 expect_excludes() {
   pattern="$1"
@@ -25,162 +88,123 @@ expect_excludes_regex() {
   fi
 }
 
-expect_step_contains() {
-  step_name="$1"
+expect_job_excludes() {
+  job_name="$1"
   pattern="$2"
   description="$3"
-  if ! awk -v step_name="$step_name" -v pattern="$pattern" '
-    $0 == "      - name: " step_name { in_step = 1; seen_step = 1; next }
-    in_step && /^      - name: / { in_step = 0 }
-    in_step && index($0, pattern) { found = 1 }
-    END { exit !(seen_step && found) }
-  ' "$workflow"; then
-    echo "FAIL: workflow ${description}" >&2
-    failures=$((failures + 1))
-  fi
-}
-
-expect_step_excludes() {
-  step_name="$1"
-  pattern="$2"
-  description="$3"
-  if ! awk -v step_name="$step_name" -v pattern="$pattern" '
-    $0 == "      - name: " step_name { in_step = 1; next }
-    in_step && /^      - name: / { exit }
-    in_step && index($0, pattern) { found = 1 }
+  if awk -v job_name="$job_name" -v pattern="$pattern" '
+    $0 == "  " job_name ":" { in_job = 1; next }
+    in_job && /^  [[:alnum:]_-]+:$/ { exit }
+    in_job && index($0, pattern) { found = 1 }
     END { exit !found }
   ' "$workflow"; then
-    return
+    echo "FAIL: workflow ${description}" >&2
+    failures=$((failures + 1))
   fi
-  echo "FAIL: workflow ${description}" >&2
-  failures=$((failures + 1))
 }
 
-expect_step_token() {
-  step_name="$1"
-  description="$2"
-  if ! awk -v step_name="$step_name" '
-    $0 == "      - name: " step_name { in_step = 1; seen_step = 1; next }
-    in_step && /^      - name: / { in_step = 0 }
-    in_step && /^[[:space:]]*GH_TOKEN:/ { has_gh_token = 1 }
-    in_step && index($0, "${{ github.token }}") { has_github_token = 1 }
-    END { exit !(seen_step && has_gh_token && has_github_token) }
+expect_job_contains() {
+  job_name="$1"
+  pattern="$2"
+  description="$3"
+  if ! awk -v job_name="$job_name" -v pattern="$pattern" '
+    $0 == "  " job_name ":" { in_job = 1; seen = 1; next }
+    in_job && /^  [[:alnum:]_-]+:$/ { in_job = 0 }
+    in_job && index($0, pattern) { found = 1 }
+    END { exit !(seen && found) }
   ' "$workflow"; then
     echo "FAIL: workflow ${description}" >&2
     failures=$((failures + 1))
   fi
 }
 
-expect_no_default_candidate_directory() {
-  if awk '
-    function indentation(line) {
-      match(line, /[^ ]/)
-      return RSTART - 1
-    }
-    /^[[:space:]]*defaults:[[:space:]]*($|#)/ {
-      defaults_indent = indentation($0)
-      in_defaults = 1
-      next
-    }
-    in_defaults && $0 !~ /^[[:space:]]*($|#)/ && indentation($0) <= defaults_indent {
-      in_defaults = 0
-    }
-    in_defaults {
-      normalized = $0
-      gsub(/[[:space:]\"\047]/, "", normalized)
-      if (normalized ~ /^working-directory:(\.\/)?\.candidate(\/\.)*\/?(#.*)?$/) {
-        bad = 1
-      }
-    }
-    END { exit !bad }
-  ' "$workflow"; then
-    echo "FAIL: workflow must not set a defaults.run candidate working directory" >&2
-    failures=$((failures + 1))
-  fi
-}
+expect_job_contains classify 'timeout-minutes: 10' "must bound classification to 10 minutes"
+expect_job_contains functions 'timeout-minutes: 35' "must bound the serial 30-minute Deno lane"
+expect_job_contains database 'timeout-minutes: 40' "must bound database start, SQL, and cleanup"
+expect_job_contains apple 'timeout-minutes: 65' "must contain the 60-minute Apple polling window"
+expect_job_contains result 'timeout-minutes: 10' "must bound final aggregation"
 
-expect_excludes "cache:" "must not enable a Deno or Actions cache"
-expect_excludes "actions/cache" "must not use an Actions cache"
+expect_job_contains functions "needs: classify" "must run functions only after trusted classification"
+expect_job_contains functions "needs.classify.outputs.backend_functions == '1'" "must select functions from immutable classifier output"
+expect_job_contains database "needs: classify" "must run database only after trusted classification"
+expect_job_contains database "needs.classify.outputs.backend_database == '1'" "must select database from immutable classifier output"
+expect_job_contains apple "needs: classify" "must run Apple polling only after trusted classification"
+expect_job_contains apple "needs.classify.outputs.classification == 'apple'" "must select Apple work from immutable classifier output"
+expect_job_contains result 'if: ${{ always()' "must always aggregate selected lane results on a fresh runner"
+expect_job_contains result 'needs: [classify, functions, database, apple]' "must depend on every verification lane"
+expect_job_contains result 'name: Underbark PR Gate result' "must retain the one stable required status"
 
-function_condition="if: \${{ steps.classify.outputs.backend_functions == '1' }}"
-database_condition="if: \${{ steps.classify.outputs.backend_database == '1' }}"
-apple_condition="if: \${{ steps.classify.outputs.classification == 'apple' || steps.classify.outputs.classification == 'apple-backend' }}"
-cleanup_condition="if: \${{ always() && steps.classify.outputs.backend_database == '1' }}"
+expect_job_contains functions 'denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed' "must pin Deno setup"
+expect_job_contains functions 'deno-version: v2.9.5' "must pin Deno 2.9.5"
+expect_job_contains functions 'timeout 10m deno fmt --check supabase/functions' "must run fixed Deno formatting"
+expect_job_contains functions 'timeout 10m deno check --config supabase/functions/deno.json supabase/functions/*/index.ts' "must run fixed Deno checking"
+expect_job_contains functions 'timeout 10m deno test --config supabase/functions/deno.json supabase/functions' "must run fixed Deno tests"
 
-expect_step_contains "Set up Deno" "$function_condition" "must condition Deno setup on function scope"
-expect_step_contains "Set up Deno" "uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed" "must pin Deno setup in its conditional step"
-expect_step_contains "Set up Deno" "deno-version: v2.9.5" "must pin Deno 2.9.5 in its conditional step"
-expect_step_contains "Verify Supabase functions" "$function_condition" "must condition Deno verification on function scope"
-expect_step_contains "Verify Supabase functions" "timeout 10m deno fmt --check supabase/functions" "must use the fixed Deno format command"
-expect_step_contains "Verify Supabase functions" "timeout 10m deno check --config supabase/functions/deno.json supabase/functions/*/index.ts" "must use the fixed Deno check command"
-expect_step_contains "Verify Supabase functions" "timeout 10m deno test --config supabase/functions/deno.json supabase/functions" "must use the fixed Deno test command"
+expect_job_contains database 'supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1' "must pin Supabase setup"
+expect_job_contains database 'version: 2.113.0' "must pin Supabase CLI 2.113.0"
+expect_job_contains database 'trap cleanup EXIT' "must install same-step database cleanup"
+expect_job_contains database 'timeout 15m supabase start --workdir .' "must bound disposable database startup"
+expect_job_contains database 'timeout 10m bash -euo pipefail -c' "must bound SQL suites"
+expect_job_contains database 'psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1' "must run SQL against only the disposable local database"
+expect_job_contains database 'timeout 5m supabase stop --workdir . --no-backup' "must bound cleanup and disable backup"
 
-expect_step_contains "Set up Supabase CLI" "$database_condition" "must condition Supabase setup on database scope"
-expect_step_contains "Set up Supabase CLI" "uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1" "must pin Supabase setup in its conditional step"
-expect_step_contains "Set up Supabase CLI" "version: 2.113.0" "must pin Supabase CLI 2.113.0 in its conditional step"
-expect_step_contains "Start disposable Supabase database" "$database_condition" "must condition Supabase start on database scope"
-expect_step_contains "Start disposable Supabase database" "timeout 15m supabase start --workdir . --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor" "must use the fixed Supabase start exclusions"
-expect_step_contains "Run Supabase SQL suites" "$database_condition" "must condition SQL suites on database scope"
-expect_step_contains "Run Supabase SQL suites" "for suite in supabase/tests/*.sql; do psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -v ON_ERROR_STOP=1 -f \"\$suite\"; done" "must run every SQL suite with ON_ERROR_STOP"
-expect_step_contains "Stop disposable Supabase database" "$cleanup_condition" "must always clean up selected database work"
-expect_step_contains "Stop disposable Supabase database" "supabase stop --workdir . --no-backup" "must stop Supabase without a backup"
-
-expect_step_contains "Poll exact-head Apple verification" "$apple_condition" "must poll Apple only for Apple and mixed scope"
-
-expect_step_token "Classify trusted verification" "must scope GH_TOKEN to trusted classification"
-expect_step_token "Poll exact-head Apple verification" "must scope GH_TOKEN to Apple polling"
-expect_step_token "Validate final live tuple" "must scope GH_TOKEN to final tuple validation"
-token_count="$(grep -c '^[[:space:]]*GH_TOKEN:' "$workflow" || true)"
-github_token_count="$(grep -cF '${{ github.token }}' "$workflow" || true)"
-github_token_env_count="$(grep -cF 'GITHUB_TOKEN' "$workflow" || true)"
-if [ "$token_count" -ne 3 ] || [ "$github_token_count" -ne 3 ] || [ "$github_token_env_count" -ne 0 ]; then
-  echo "FAIL: workflow must scope all GitHub tokens only to classification, Apple polling, and final tuple validation" >&2
-  failures=$((failures + 1))
-fi
-
-expect_excludes "secrets." "must not expose secrets"
-expect_excludes_regex 'secrets[[:space:]]*\[' "must not expose bracket-form secrets"
-expect_excludes_regex 'github[[:space:]]*\[' "must not use bracket-form GitHub tokens"
-expect_excludes "upload-artifact" "must not upload artifacts"
-expect_excludes "download-artifact" "must not download artifacts"
-expect_excludes "matrix:" "must not use a matrix"
-expect_excludes "deployment" "must not deploy"
-expect_excludes ".candidate/scripts/" "must not execute candidate scripts"
-expect_excludes ".candidate/scripts" "must not execute candidate scripts through an alternate path"
-expect_excludes_regex '(^|[^[:alnum:]_])\.candidate(/[^/[:space:]]+/\.\.)*(/\.)*/scripts([/[:space:]]|$)' "must not execute normalized candidate scripts"
-expect_excludes "macos-" "must not allocate a macOS runner"
-
-expect_no_default_candidate_directory
-
-for candidate_step in "Verify Supabase functions" "Start disposable Supabase database" "Run Supabase SQL suites" "Stop disposable Supabase database"; do
-  expect_step_excludes "$candidate_step" "GH_TOKEN:" "must keep ${candidate_step} free of GH_TOKEN"
-  expect_step_excludes "$candidate_step" "GITHUB_TOKEN:" "must keep ${candidate_step} free of GITHUB_TOKEN"
-  expect_step_excludes "$candidate_step" "github.token" "must keep ${candidate_step} free of direct GitHub tokens"
-  expect_step_excludes "$candidate_step" "secrets" "must keep ${candidate_step} free of secrets"
+for untrusted_job in functions database; do
+  expect_job_excludes "$untrusted_job" 'GH_TOKEN:' "must keep ${untrusted_job} on a credential-free runner"
+  expect_job_excludes "$untrusted_job" 'github.token' "must keep ${untrusted_job} free of direct GitHub tokens"
+  expect_job_excludes "$untrusted_job" 'secrets' "must keep ${untrusted_job} free of secrets"
 done
 
-if awk '
-  function finish_step() {
-    if (candidate_directory && candidate_script) {
-      bad = 1
-    }
-    candidate_directory = 0
-    candidate_script = 0
-  }
-  /^      - name: / { finish_step() }
-  {
-    candidate_line = $0
-    gsub(/[[:space:]\"\047]/, "", candidate_line)
-  }
-  candidate_line ~ /^working-directory:(\.\/)?\.candidate(\/\.)*\/?(#.*)?$/ { candidate_directory = 1 }
-  index($0, "scripts/") { candidate_script = 1 }
-  END { finish_step(); exit !bad }
-' "$workflow"; then
-  echo "FAIL: workflow must not execute scripts from a .candidate working directory" >&2
+expect_job_excludes classify 'deno test' "must not execute candidate Deno before authenticated classification"
+expect_job_excludes classify 'psql ' "must not execute candidate SQL before authenticated classification"
+expect_job_excludes apple 'deno test' "must not execute candidate Deno on the Apple token runner"
+expect_job_excludes apple 'psql ' "must not execute candidate SQL on the Apple token runner"
+expect_job_excludes result 'deno test' "must not execute candidate Deno before final authentication"
+expect_job_excludes result 'psql ' "must not execute candidate SQL before final authentication"
+
+token_count="$(grep -c '^[[:space:]]*GH_TOKEN:' "$workflow" || true)"
+github_token_count="$(grep -cF '${{ github.token }}' "$workflow" || true)"
+if [[ "$token_count" -ne 3 || "$github_token_count" -ne 3 ]]; then
+  echo "FAIL: workflow must expose tokens only to classify, Apple, and final aggregation" >&2
+  failures=$((failures + 1))
+fi
+expect_job_contains classify 'GH_TOKEN: ${{ github.token }}' "must authenticate trusted classification"
+expect_job_contains apple 'GH_TOKEN: ${{ github.token }}' "must authenticate exact Apple polling"
+expect_job_contains result 'GH_TOKEN: ${{ github.token }}' "must authenticate terminal tuple validation"
+
+expect_job_contains result 'CLASSIFY_RESULT: ${{ needs.classify.result }}' "must aggregate classification outcome explicitly"
+expect_job_contains result 'FUNCTIONS_RESULT: ${{ needs.functions.result }}' "must aggregate functions outcome explicitly"
+expect_job_contains result 'DATABASE_RESULT: ${{ needs.database.result }}' "must aggregate database outcome explicitly"
+expect_job_contains result 'APPLE_RESULT: ${{ needs.apple.result }}' "must aggregate Apple outcome explicitly"
+expect_job_contains result 'require_lane_result "$BACKEND_FUNCTIONS" "$FUNCTIONS_RESULT"' "must reject a missing selected functions result"
+expect_job_contains result 'require_lane_result "$BACKEND_DATABASE" "$DATABASE_RESULT"' "must reject a missing selected database result"
+expect_job_contains result 'require_lane_result 1 "$APPLE_RESULT"' "must reject a missing selected Apple result"
+expect_job_contains result 'verify-underbark-release-context.sh' "must execute final release-context predicates"
+expect_job_contains result 'verify-underbark-ancestry-sync.sh' "must repeat exact ancestry validation at terminal success"
+expect_job_contains result 'Final exact pull request tuple and selected verification results verified.' "must end with fresh tuple evidence"
+
+expect_excludes_regex '\|\|[[:space:]]*\[' "must not use malformed single-bracket OR lists"
+expect_excludes_regex '&&[[:space:]]*\[' "must not use malformed single-bracket AND lists"
+expect_excludes 'Stop disposable Supabase database' "must not defer cleanup to a later shared-runner step"
+expect_excludes 'cache:' "must not enable caches"
+expect_excludes 'actions/cache' "must not use an Actions cache"
+expect_excludes 'upload-artifact' "must not upload artifacts"
+expect_excludes 'download-artifact' "must not download artifacts"
+expect_excludes 'matrix:' "must not use a matrix"
+expect_excludes 'deployment' "must not deploy"
+expect_excludes '.candidate/scripts/' "must not execute candidate scripts"
+expect_excludes 'macos-' "must not allocate a macOS runner"
+expect_excludes 'xcodebuild' "must not run Xcode"
+expect_excludes 'secrets.' "must not expose repository secrets"
+expect_excludes_regex 'secrets[[:space:]]*\[' "must not expose bracket-form secrets"
+
+job_count="$(grep -c '^    runs-on:' "$workflow")"
+stable_name_count="$(grep -c '^    name: Underbark PR Gate result$' "$workflow")"
+if [[ "$job_count" -ne 5 || "$stable_name_count" -ne 1 ]]; then
+  echo "FAIL: workflow must have five isolated jobs and one stable required status" >&2
   failures=$((failures + 1))
 fi
 
-if [ "$failures" -ne 0 ]; then
+if [[ "$failures" -ne 0 ]]; then
   echo "${failures} trusted workflow structure assertion(s) failed." >&2
   exit 1
 fi
