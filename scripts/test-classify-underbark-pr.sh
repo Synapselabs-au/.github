@@ -59,16 +59,28 @@ expect_classification $'static\t0\t0' "legacy classifier deletion" \
 
 expect_classification $'apple\t0\t0' "RecovrKit logic" M RecovrKit/Sources/RecovrKit/Scoring/Recovery.swift
 expect_classification $'apple\t0\t0' "iPhone source" A Recovr/TodayView.swift
+expect_classification $'apple\t0\t0' "AppModel source" M Recovr/AppModel.swift
 expect_classification $'apple\t0\t0' "Watch source" M RecovrWatch/RecoveryView.swift
 expect_classification $'apple\t0\t0' "Markdown inside an iPhone target" M Recovr/RuntimeContent.md
 expect_classification $'apple\t0\t0' "Markdown inside a Watch target" M RecovrWatch/RuntimeContent.md
 expect_classification $'apple\t0\t0' "project configuration" M project.yml
 expect_classification $'apple\t0\t0' "signing script" M scripts/verify-signing.sh
+expect_classification $'apple\t0\t0' "Xcode lane implementation" \
+  A scripts/lib/xcode-lane.sh \
+  A scripts/with-xcode-lane.sh \
+  A scripts/xcode-lane-status.sh
+expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
+  A scripts/tests/xcode-lane-tests.sh \
+  A scripts/tests/xcode-lane-security-tests.sh \
+  A scripts/tests/xcode-wrapper-lane-tests.sh \
+  A scripts/verify-governance.sh
 expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M Recovr/App.swift
 
 expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts
+expect_classification $'backend\t1\t0' "Supabase function handler" M supabase/functions/delete-account/handler.ts
 expect_classification $'backend\t1\t0' "Supabase function documentation" M supabase/functions/README.md
 expect_classification $'backend\t0\t1' "Supabase migration" M supabase/migrations/20260101000000_example.sql
+expect_classification $'backend\t0\t1' "fixture Supabase migration" A supabase/migrations/20260812000000_fixture.sql
 expect_classification $'backend\t0\t1' "Supabase database test" M supabase/tests/example.sql
 expect_classification $'backend\t1\t1' "Supabase configuration" M supabase/config.toml
 expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
@@ -79,6 +91,9 @@ expect_classification $'backend\t1\t1' "function plus migration" \
 expect_classification $'apple-backend\t1\t0' "function plus Apple source" \
   M supabase/functions/delete-account/index.ts \
   M Recovr/App.swift
+expect_classification $'apple-backend\t1\t0' "AppModel plus function handler" \
+  M Recovr/AppModel.swift \
+  M supabase/functions/delete-account/handler.ts
 expect_classification $'apple-backend\t0\t1' "migration plus project configuration" \
   M supabase/migrations/20260101000000_example.sql \
   M project.yml
