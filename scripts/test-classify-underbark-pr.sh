@@ -60,6 +60,9 @@ expect_classification $'static\t0\t0' "legacy classifier deletion" \
 expect_classification $'apple\t0\t0' "RecovrKit logic" M RecovrKit/Sources/RecovrKit/Scoring/Recovery.swift
 expect_classification $'apple\t0\t0' "iPhone source" A Recovr/TodayView.swift
 expect_classification $'apple\t0\t0' "AppModel source" M Recovr/AppModel.swift
+expect_classification $'apple\t0\t0' "shared AlarmKit metadata" A AlarmShared/WakeAlarmMetadata.swift
+expect_classification $'apple\t0\t0' "AlarmKit controller tests" A RecovrAlarmKitTests/WakeAlarmControllerTests.swift
+expect_classification $'apple\t0\t0' "AlarmKit service tests" A RecovrAlarmKitTests/WakeAlarmServiceTests.swift
 expect_classification $'apple\t0\t0' "Watch source" M RecovrWatch/RecoveryView.swift
 expect_classification $'apple\t0\t0' "Markdown inside an iPhone target" M Recovr/RuntimeContent.md
 expect_classification $'apple\t0\t0' "Markdown inside a Watch target" M RecovrWatch/RuntimeContent.md

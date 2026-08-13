@@ -33,7 +33,7 @@ while IFS= read -r -d '' status; do
   esac
 
   case "$path" in
-    Recovr/*|RecovrKit/*|RecovrStoreKitTests/*|RecovrTests/*|RecovrUITests/*|RecovrWatch/*|RecovrWatchUITests/*|RecovrWatchWidgets/*|RecovrWidgets/*|Shared/*|Config/*|ci_scripts/*)
+    AlarmShared/*|Recovr/*|RecovrAlarmKitTests/*|RecovrKit/*|RecovrStoreKitTests/*|RecovrTests/*|RecovrUITests/*|RecovrWatch/*|RecovrWatchUITests/*|RecovrWatchWidgets/*|RecovrWidgets/*|Shared/*|Config/*|ci_scripts/*)
       apple=1
       ;;
     project.yml)
