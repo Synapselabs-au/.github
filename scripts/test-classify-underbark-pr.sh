@@ -106,6 +106,10 @@ expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/ne
 expect_classification $'blocked\t0\t0' "legacy workflow modification" M .github/workflows/ci.yml
 expect_classification $'blocked\t0\t0' "mixed static and unknown" M README.md A tools/new-tool.sh
 expect_classification $'blocked\t0\t0' "mixed Apple and unknown" M Recovr/App.swift A tools/new-tool.sh
+expect_classification $'blocked\t0\t0' "AlarmShared traversal" A AlarmShared/../Secrets.swift
+expect_classification $'blocked\t0\t0' "AlarmKit test duplicate separator" A RecovrAlarmKitTests//WakeAlarmServiceTests.swift
+expect_classification $'blocked\t0\t0' "AlarmShared newline" A $'AlarmShared/WakeAlarm\nMetadata.swift'
+expect_classification $'blocked\t0\t0' "AlarmKit test carriage return" A $'RecovrAlarmKitTests/WakeAlarm\rServiceTests.swift'
 expect_classification $'blocked\t0\t0' "empty diff"
 expect_classification $'blocked\t0\t0' "malformed status pair" M
 expect_classification $'blocked\t0\t0' "rename ambiguity" R100 Recovr/Old.swift Recovr/New.swift
