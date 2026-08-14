@@ -28,6 +28,7 @@ expect_classification() {
 expect_classification $'static\t0\t0' "ordinary Markdown only" M README.md
 expect_classification $'static\t0\t0' "nested Markdown" A docs/guides/setup.md
 expect_classification $'static\t0\t0' "pull request template" M .github/pull_request_template.md
+expect_classification $'static\t0\t0' "repository attributes" A .gitattributes
 expect_classification $'static\t0\t0' "legacy workflow deletion" \
   D .github/workflows/ci.yml \
   D .github/workflows/pr-source-policy.yml
@@ -82,6 +83,7 @@ expect_classification $'apple-backend\t0\t1' "migration plus project configurati
 
 expect_classification $'blocked\t0\t0' "unknown root file" M Package.resolved
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
+expect_classification $'blocked\t0\t0' "attributes lookalike" A .gitattributes.bak
 expect_classification $'blocked\t0\t0' "legacy workflow modification" M .github/workflows/ci.yml
 expect_classification $'blocked\t0\t0' "mixed static and unknown" M README.md A tools/new-tool.sh
 expect_classification $'blocked\t0\t0' "mixed Apple and unknown" M Recovr/App.swift A tools/new-tool.sh
