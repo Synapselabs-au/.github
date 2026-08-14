@@ -36,7 +36,12 @@ workflow = YAML.load_file(path)
 jobs = workflow.fetch("jobs")
 expected_jobs = %w[classify functions database result]
 raise "unexpected job graph" unless jobs.keys == expected_jobs
+raise "pull request trigger is narrowed" unless workflow.fetch(true).fetch("pull_request").nil?
 raise "required result name changed" unless jobs.fetch("result").fetch("name") == "Underbark PR Gate result"
+required_result_count = jobs.values.count { |job| job["name"] == "Underbark PR Gate result" }
+raise "required result name is not unique" unless required_result_count == 1
+raise "classifier repository guard changed" unless jobs.fetch("classify")["if"] ==
+  "${{ github.repository == 'Synapselabs-au/Underbark' }}"
 raise "terminal dependencies changed" unless jobs.fetch("result").fetch("needs") == %w[classify functions database]
 raise "terminal job is not always-run" unless jobs.fetch("result").fetch("if").include?("always()")
 raise "workflow permissions must default to none" unless workflow.fetch("permissions") == {}
@@ -72,7 +77,7 @@ expected_timeouts.each do |name, timeout|
 end
 
 def scripts(job)
-  job.fetch("steps").filter_map { |step| step["run"] }
+  job.fetch("steps").map { |step| step["run"] }.compact
 end
 
 def serialized(value)

@@ -3,28 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 classifier="${script_dir}/classify-underbark-pr.sh"
-workflow="${script_dir}/../.github/workflows/underbark-risk-tiered-pr-gate.yml"
 failures=0
-
-bash "${script_dir}/test-verify-underbark-ancestry-sync.sh"
-
-expect_workflow_contains() {
-  pattern="$1"
-  description="$2"
-  if ! grep -Fq -- "$pattern" "$workflow"; then
-    echo "FAIL: workflow ${description}" >&2
-    failures=$((failures + 1))
-  fi
-}
-
-expect_workflow_excludes() {
-  pattern="$1"
-  description="$2"
-  if grep -Fq -- "$pattern" "$workflow"; then
-    echo "FAIL: workflow ${description}" >&2
-    failures=$((failures + 1))
-  fi
-}
 
 expect_classification() {
   expected="$1"
@@ -113,61 +92,6 @@ expect_classification $'blocked\t0\t0' "AlarmKit test carriage return" A $'Recov
 expect_classification $'blocked\t0\t0' "empty diff"
 expect_classification $'blocked\t0\t0' "malformed status pair" M
 expect_classification $'blocked\t0\t0' "rename ambiguity" R100 Recovr/Old.swift Recovr/New.swift
-
-job_count="$(grep -c '^    runs-on:' "$workflow")"
-if [ "$job_count" -ne 5 ]; then
-  echo "FAIL: workflow expected five isolated jobs, found ${job_count}" >&2
-  failures=$((failures + 1))
-fi
-
-expect_workflow_contains "name: Underbark PR Gate result" "must keep the stable required-check name"
-stable_name_count="$(grep -c '^    name: Underbark PR Gate result$' "$workflow")"
-if [ "$stable_name_count" -ne 1 ]; then
-  echo "FAIL: workflow must expose exactly one stable required-check job" >&2
-  failures=$((failures + 1))
-fi
-expect_workflow_contains "github.repository == 'Synapselabs-au/Underbark'" "must not execute as a normal workflow in the trust repository"
-expect_workflow_contains "runs-on: ubuntu-latest" "must use the cheap Linux runner"
-expect_workflow_contains 'ref: ${{ github.workflow_sha }}' "must bind trusted code to the workflow source SHA"
-expect_workflow_contains "git -C .candidate diff --name-status --no-renames -z" "must classify the exact diff"
-expect_workflow_contains 'python3 .gate/scripts/verify-underbark-supabase-config.py .candidate/supabase/config.toml' "must verify complete Supabase configuration semantics before classification succeeds"
-expect_workflow_contains 'git -C .candidate diff --quiet "${LIVE_BASE_SHA}...${LIVE_HEAD}"' "must isolate the empty-diff ancestry path"
-expect_workflow_contains 'verify-underbark-ancestry-sync.sh' "must verify exact ancestry-sync parents and tree"
-expect_workflow_contains 'git/ref/heads/main' "must bind the ancestry sync to current main"
-expect_workflow_contains 'EVENT_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}' "must bind ancestry syncs to the dedicated App login"
-expect_workflow_contains 'EVENT_AUTHOR_ID: ${{ github.event.pull_request.user.id }}' "must bind ancestry syncs to the dedicated App user ID"
-expect_workflow_contains 'EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}' "must inspect ancestry-sync authorship"
-expect_workflow_contains 'EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}' "must bind ancestry syncs to the protected repository"
-expect_workflow_contains 'verify-underbark-release-context.sh' "must use executable release-context predicates"
-expect_workflow_contains 'release-in-flight' "must require the active release reservation"
-expect_workflow_contains '.total_count' "must count every active release reservation"
-expect_workflow_contains '.merged_at // empty' "must require a merged release marker"
-expect_workflow_contains 'require_current_main "$LIVE_MAIN_SHA"' "must revalidate main before ancestry success"
-expect_workflow_contains 'merge-base --is-ancestor' "must bind the release marker to the live base ancestry"
-release_context_check_count="$(grep -c '^[[:space:]]*require_release_context$' "$workflow")"
-if [ "$release_context_check_count" -lt 2 ]; then
-  echo "FAIL: workflow must verify release context before and after ancestry inspection" >&2
-  failures=$((failures + 1))
-fi
-expect_workflow_contains 'APPLE_APP_ID: "117084"' "must pin the Apple GitHub App"
-expect_workflow_contains "APPLE_CHECK_NAME: Recovr | Underbark PR Verification | Test - iOS" "must pin the Apple check name"
-expect_workflow_contains "require_current_tuple" "must reject stale pull request state"
-tuple_check_count="$(grep -c '^[[:space:]]*require_current_tuple$' "$workflow")"
-if [ "$tuple_check_count" -lt 3 ]; then
-  echo "FAIL: workflow must revalidate the live tuple before every success path and Apple poll" >&2
-  failures=$((failures + 1))
-fi
-expect_workflow_contains 'any(.pull_requests[]?; .number == $pr_number)' "must bind Apple evidence to this pull request"
-expect_workflow_contains "sort_by(.id)" "must select the newest Apple check deterministically"
-expect_workflow_contains "gh api --paginate --slurp" "must inspect every page of exact-head check runs"
-expect_workflow_contains 'group: underbark-pr-gate-${{ github.repository }}-${{ github.event.pull_request.number }}' "must share concurrency across superseded heads of one pull request"
-expect_workflow_excludes 'group: underbark-pr-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}' "must not isolate superseded heads from cancellation"
-expect_workflow_contains "cancel-in-progress: true" "must cancel superseded attempts for one pull request"
-expect_workflow_excludes "types: [" "must not claim unsupported ruleset-workflow event filters"
-expect_workflow_excludes "macos-" "must not allocate a GitHub-hosted macOS runner"
-expect_workflow_excludes "xcodebuild" "must not run Xcode"
-expect_workflow_excludes ".candidate/scripts/" "must not execute candidate scripts"
-expect_workflow_excludes "upload-artifact" "must not upload artifacts"
 
 if [ "$failures" -ne 0 ]; then
   echo "${failures} classifier fixture(s) failed." >&2
