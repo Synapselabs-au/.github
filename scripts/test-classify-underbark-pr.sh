@@ -59,7 +59,8 @@ expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/verify-governance.sh
 expect_classification $'apple\t0\t0' "local Apple pre-push tooling" \
   A .githooks/pre-push \
-  A scripts/install-hooks.sh
+  A scripts/install-hooks.sh \
+  A scripts/tests/pre-push-hook-tests.sh
 expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M Recovr/App.swift
 
 expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts

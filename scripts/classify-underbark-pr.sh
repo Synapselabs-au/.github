@@ -52,7 +52,7 @@ while IFS= read -r -d '' status; do
     .githooks/pre-push|scripts/archive-app.sh|scripts/install-hooks.sh|scripts/render-brand-assets.sh|scripts/verify-archive.sh|scripts/verify-brand.sh|scripts/verify-distribution-bundles.sh|scripts/verify-governance.sh|scripts/verify-ipa.sh|scripts/verify-pr-source-policy-tests.sh|scripts/verify-pr-source-policy.sh|scripts/verify-release-record.sh|scripts/verify-signing.sh|scripts/verify-storekit-catalogue.sh|scripts/verify-version-change-policy-tests.sh|scripts/verify-version-change-policy.sh|scripts/verify-version.sh|scripts/verify-xcode-cloud-config.sh|scripts/verify-xcode-cloud-prebuild-tests.sh|scripts/version.sh|scripts/with-xcode-lane.sh|scripts/xcode-lane-status.sh)
       apple=1
       ;;
-    scripts/lib/xcode-lane.sh|scripts/tests/xcode-lane-tests.sh|scripts/tests/xcode-lane-security-tests.sh|scripts/tests/xcode-wrapper-lane-tests.sh)
+    scripts/lib/xcode-lane.sh|scripts/tests/pre-push-hook-tests.sh|scripts/tests/xcode-lane-tests.sh|scripts/tests/xcode-lane-security-tests.sh|scripts/tests/xcode-wrapper-lane-tests.sh)
       apple=1
       ;;
     .gitattributes|*.md|.github/pull_request_template.md)
