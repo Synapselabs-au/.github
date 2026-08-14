@@ -72,7 +72,7 @@ expected_timeouts.each do |name, timeout|
 end
 
 def scripts(job)
-  job.fetch("steps").filter_map { |step| step["run"] }
+  job.fetch("steps").map { |step| step["run"] }.compact
 end
 
 def serialized(value)
