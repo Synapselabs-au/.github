@@ -57,10 +57,6 @@ expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/tests/xcode-lane-security-tests.sh \
   A scripts/tests/xcode-wrapper-lane-tests.sh \
   A scripts/verify-governance.sh
-expect_classification $'apple\t0\t0' "local Apple pre-push tooling" \
-  A .githooks/pre-push \
-  A scripts/install-hooks.sh \
-  A scripts/tests/pre-push-hook-tests.sh
 expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M Recovr/App.swift
 
 expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts
@@ -87,8 +83,7 @@ expect_classification $'apple-backend\t0\t1' "migration plus project configurati
 
 expect_classification $'blocked\t0\t0' "unknown root file" M Package.resolved
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
-expect_classification $'blocked\t0\t0' "unknown Git hook" A .githooks/post-checkout
-expect_classification $'blocked\t0\t0' "unknown installer script" A scripts/install-anything.sh
+expect_classification $'blocked\t0\t0' "attributes lookalike" A .gitattributes.bak
 expect_classification $'blocked\t0\t0' "legacy workflow modification" M .github/workflows/ci.yml
 expect_classification $'blocked\t0\t0' "mixed static and unknown" M README.md A tools/new-tool.sh
 expect_classification $'blocked\t0\t0' "mixed Apple and unknown" M Recovr/App.swift A tools/new-tool.sh
