@@ -55,6 +55,8 @@ while IFS= read -r -d '' status; do
     scripts/lib/xcode-lane.sh|scripts/tests/xcode-lane-tests.sh|scripts/tests/xcode-lane-security-tests.sh|scripts/tests/xcode-wrapper-lane-tests.sh)
       apple=1
       ;;
+    docs/brand/fonts/BricolageGrotesque-OFL.txt|docs/brand/fonts/HankenGrotesk-OFL.txt|docs/brand/fonts/SpaceMono-OFL.txt)
+      ;;
     .gitattributes|*.md|.github/pull_request_template.md)
       ;;
     .github/workflows/ci.yml|.github/workflows/pr-source-policy.yml|scripts/classify-ci-changes.sh|scripts/verify-ci-classifier.sh|scripts/verify-ci-workflow.sh)
