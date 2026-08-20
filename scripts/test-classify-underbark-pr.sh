@@ -63,6 +63,8 @@ expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/tests/xcode-lane-security-tests.sh \
   A scripts/tests/xcode-wrapper-lane-tests.sh \
   A scripts/verify-governance.sh
+expect_classification $'apple\t0\t0' "distribution verifier test suite" \
+  M scripts/tests/verify-distribution-bundles-tests.sh
 expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M Recovr/App.swift
 
 expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts
