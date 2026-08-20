@@ -28,6 +28,9 @@ expect_classification() {
 expect_classification $'static\t0\t0' "ordinary Markdown only" M README.md
 expect_classification $'static\t0\t0' "nested Markdown" A docs/guides/setup.md
 expect_classification $'static\t0\t0' "pull request template" M .github/pull_request_template.md
+expect_classification $'static\t0\t0' "issue template lifecycle" \
+  A .github/ISSUE_TEMPLATE/work-item.yml \
+  D .github/ISSUE_TEMPLATE/retired.yml
 expect_classification $'static\t0\t0' "repository attributes" A .gitattributes
 expect_classification $'static\t0\t0' "Bricolage Grotesque license record" \
   M docs/brand/fonts/BricolageGrotesque-OFL.txt
@@ -65,6 +68,16 @@ expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/verify-governance.sh
 expect_classification $'apple\t0\t0' "distribution verifier test suite" \
   M scripts/tests/verify-distribution-bundles-tests.sh
+expect_classification $'apple\t0\t0' "Xcode Cloud policy audit tooling" \
+  A scripts/xcode-cloud-audit.sh \
+  A scripts/tests/xcode-cloud-audit-tests.sh \
+  A scripts/tests/fixtures/xcode-cloud/live-readback-2026-08-19.json
+expect_classification $'apple\t0\t0' "Xcode Cloud smoke and manual-start tooling" \
+  A scripts/tests/xcode-cloud-smoke-plan-tests.sh \
+  A scripts/xcode-cloud-start-pr.sh \
+  A scripts/tests/xcode-cloud-start-pr-tests.sh
+expect_classification $'apple\t0\t0' "nested Xcode Cloud fixture" \
+  A scripts/tests/fixtures/xcode-cloud/drift/enabled-flip.json
 expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M Recovr/App.swift
 
 expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts
@@ -90,6 +103,10 @@ expect_classification $'apple-backend\t0\t1' "migration plus project configurati
   M project.yml
 
 expect_classification $'blocked\t0\t0' "unknown root file" M Package.resolved
+expect_classification $'blocked\t0\t0' "unlisted fixtures root stays denied" \
+  A scripts/tests/fixtures/other-tool/data.json
+expect_classification $'blocked\t0\t0' "unlisted new script stays denied" \
+  A scripts/xcode-cloud-nuke.sh
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
 expect_classification $'blocked\t0\t0' "attributes lookalike" A .gitattributes.bak
 expect_classification $'blocked\t0\t0' "unknown brand license record" \
