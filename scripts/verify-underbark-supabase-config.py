@@ -7,13 +7,12 @@ import sys
 import tomllib
 
 
-# Transition window for Underbark PR #261 (adds [functions.app-feedback],
-# verify_jwt = false, an account-free endpoint whose handler enforces closed
-# payload validation and per-client daily limits). The first digest is the
-# pre-#261 configuration so every open PR that does not touch the Supabase
-# configuration keeps passing; retire it once #261 merges.
+# The approved Supabase configuration semantics. Keep this a tuple: a config
+# change lands as a two-digest transition window (old + new) so open PRs that
+# do not touch the configuration keep passing, then the old digest is retired
+# once the change merges to dev. Current digest: dev after Underbark #261
+# ([functions.app-feedback], verify_jwt = false).
 EXPECTED_SHA256S = (
-    "608a2ca6dca6b8a72cb7d550691560158563eb3f73a9f2124da44388791ddcac",
     "b2157fa023894ea42ffcb0e05a6b1d8fabff6734313b65a23370459b00c043c3",
 )
 
