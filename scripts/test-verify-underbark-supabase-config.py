@@ -93,6 +93,21 @@ verify_jwt = true
         with self.assertRaises(VERIFIER.VerificationError):
             VERIFIER.verify(pathlib.Path("does-not-exist.toml"), EXPECTED_DIGEST)
 
+    def test_any_digest_in_a_transition_window_is_accepted(self) -> None:
+        self.verify_text_with_digests(BASE_CONFIG, ("0" * 64, EXPECTED_DIGEST))
+
+    def test_a_config_outside_the_transition_window_is_rejected(self) -> None:
+        with self.assertRaises(VERIFIER.VerificationError):
+            self.verify_text_with_digests(BASE_CONFIG, ("0" * 64, "1" * 64))
+
+    def verify_text_with_digests(
+        self, text: str, digests: tuple[str, ...]
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory, "config.toml")
+            path.write_text(text, encoding="utf-8")
+            VERIFIER.verify(path, digests)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,15 @@ import sys
 import tomllib
 
 
-EXPECTED_SHA256 = "608a2ca6dca6b8a72cb7d550691560158563eb3f73a9f2124da44388791ddcac"
+# Transition window for Underbark PR #261 (adds [functions.app-feedback],
+# verify_jwt = false, an account-free endpoint whose handler enforces closed
+# payload validation and per-client daily limits). The first digest is the
+# pre-#261 configuration so every open PR that does not touch the Supabase
+# configuration keeps passing; retire it once #261 merges.
+EXPECTED_SHA256S = (
+    "608a2ca6dca6b8a72cb7d550691560158563eb3f73a9f2124da44388791ddcac",
+    "b2157fa023894ea42ffcb0e05a6b1d8fabff6734313b65a23370459b00c043c3",
+)
 
 
 class VerificationError(Exception):
@@ -28,17 +36,22 @@ def canonical_bytes(text: str) -> bytes:
     return canonical.encode("utf-8")
 
 
-def verify(path: pathlib.Path, expected_digest: str = EXPECTED_SHA256) -> None:
+def verify(
+    path: pathlib.Path,
+    expected_digests: str | tuple[str, ...] = EXPECTED_SHA256S,
+) -> None:
+    if isinstance(expected_digests, str):
+        expected_digests = (expected_digests,)
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         raise VerificationError(f"Unable to read Supabase configuration: {error}") from error
 
     actual_digest = hashlib.sha256(canonical_bytes(text)).hexdigest()
-    if actual_digest != expected_digest:
+    if actual_digest not in expected_digests:
         raise VerificationError(
             "Supabase configuration semantics are not approved by the trusted gate. "
-            f"Expected {expected_digest}, got {actual_digest}."
+            f"Expected one of {', '.join(expected_digests)}, got {actual_digest}."
         )
 
 
