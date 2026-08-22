@@ -32,6 +32,7 @@ expect_classification $'static\t0\t0' "issue template lifecycle" \
   A .github/ISSUE_TEMPLATE/work-item.yml \
   D .github/ISSUE_TEMPLATE/retired.yml
 expect_classification $'static\t0\t0' "repository attributes" A .gitattributes
+expect_classification $'static\t0\t0' "repository ignore list" M .gitignore
 expect_classification $'static\t0\t0' "Bricolage Grotesque license record" \
   M docs/brand/fonts/BricolageGrotesque-OFL.txt
 expect_classification $'static\t0\t0' "Hanken Grotesk license record" \
@@ -109,6 +110,8 @@ expect_classification $'blocked\t0\t0' "unlisted new script stays denied" \
   A scripts/xcode-cloud-nuke.sh
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
 expect_classification $'blocked\t0\t0' "attributes lookalike" A .gitattributes.bak
+expect_classification $'blocked\t0\t0' "ignore lookalike" A .gitignore.bak
+expect_classification $'blocked\t0\t0' "nested ignore is not the root one" A tools/.gitignore
 expect_classification $'blocked\t0\t0' "unknown brand license record" \
   A docs/brand/fonts/Other-OFL.txt
 expect_classification $'blocked\t0\t0' "brand license suffix lookalike" \
