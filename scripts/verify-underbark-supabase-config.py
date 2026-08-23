@@ -10,10 +10,18 @@ import tomllib
 # The approved Supabase configuration semantics. Keep this a tuple: a config
 # change lands as a two-digest transition window (old + new) so open PRs that
 # do not touch the configuration keep passing, then the old digest is retired
-# once the change merges to dev. Current digest: dev after Underbark #261
+# once the change merges to dev. Current window: dev after Underbark #261,
+# plus Underbark #317 (ADR-042 dormant continuity backup server).
+#
+# The #317 digest adds exactly four keys and removes or changes none:
+#   functions.continuity-{status,upload,download,delete}.verify_jwt = true
+# Verified by recomputing both digests from the two config.toml revisions
+# before approval; every addition tightens auth on a new endpoint. Retire
+# b2157fa0 once #317 merges to dev.
 # ([functions.app-feedback], verify_jwt = false).
 EXPECTED_SHA256S = (
     "b2157fa023894ea42ffcb0e05a6b1d8fabff6734313b65a23370459b00c043c3",
+    "fbc0abc43022192ce6291a5070dffa3f61a7d5855d5d6a19f2dae17a2c70e5f0",
 )
 
 
