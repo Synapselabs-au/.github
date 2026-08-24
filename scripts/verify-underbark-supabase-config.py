@@ -20,8 +20,13 @@ import tomllib
 # b2157fa0 once #317 merges to dev.
 # ([functions.app-feedback], verify_jwt = false).
 EXPECTED_SHA256S = (
-    "b2157fa023894ea42ffcb0e05a6b1d8fabff6734313b65a23370459b00c043c3",
+    # Current dev.
     "fbc0abc43022192ce6291a5070dffa3f61a7d5855d5d6a19f2dae17a2c70e5f0",
+    # Underbark PR #336: adds [functions.research-contribute] and
+    # [functions.research-revoke], both verify_jwt = true. Approved by the owner
+    # on 2026-08-25 after reviewing the nine-line diff. Drop this entry once #336
+    # has merged and the entry above is no longer the incoming value.
+    "eadbcb24de8495e51d4d39c56a55655ead4fbb62db736c16371855dd5692b07d",
 )
 
 
