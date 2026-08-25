@@ -55,6 +55,8 @@ while IFS= read -r -d '' status; do
     scripts/lib/xcode-lane.sh|scripts/tests/xcode-lane-tests.sh|scripts/tests/xcode-lane-security-tests.sh|scripts/tests/xcode-wrapper-lane-tests.sh|scripts/tests/verify-distribution-bundles-tests.sh|scripts/tests/xcode-cloud-audit-tests.sh|scripts/tests/xcode-cloud-smoke-plan-tests.sh|scripts/tests/xcode-cloud-start-pr-tests.sh|scripts/tests/fixtures/xcode-cloud/*)
       apple=1
       ;;
+    .github/repo-integrity-policy.json|.github/workflows/repo-integrity-sentinel.yml|scripts/repo_integrity_audit.py|scripts/repo_integrity/__init__.py|scripts/repo_integrity/core.py|scripts/repo_integrity/deterministic.py|scripts/repo_integrity/github_checks.py|scripts/repo_integrity/issues.py|scripts/repo_integrity/reporting.py|scripts/repo_integrity/runner.py|scripts/repo_integrity/semantic.py|scripts/tests/test_repo_integrity_audit.py)
+      ;;
     docs/brand/fonts/BricolageGrotesque-OFL.txt|docs/brand/fonts/HankenGrotesk-OFL.txt|docs/brand/fonts/SpaceMono-OFL.txt)
       ;;
     .gitattributes|.gitignore|*.md|.github/pull_request_template.md|.github/ISSUE_TEMPLATE/*)

@@ -46,6 +46,20 @@ expect_classification $'static\t0\t0' "legacy classifier deletion" \
   D scripts/classify-ci-changes.sh \
   D scripts/verify-ci-classifier.sh \
   D scripts/verify-ci-workflow.sh
+expect_classification $'static\t0\t0' "repository integrity sentinel control surface" \
+  A .github/repo-integrity-policy.json \
+  A .github/workflows/repo-integrity-sentinel.yml \
+  A docs/REPO_INTEGRITY.md \
+  A scripts/repo_integrity_audit.py \
+  A scripts/repo_integrity/__init__.py \
+  A scripts/repo_integrity/core.py \
+  A scripts/repo_integrity/deterministic.py \
+  A scripts/repo_integrity/github_checks.py \
+  A scripts/repo_integrity/issues.py \
+  A scripts/repo_integrity/reporting.py \
+  A scripts/repo_integrity/runner.py \
+  A scripts/repo_integrity/semantic.py \
+  A scripts/tests/test_repo_integrity_audit.py
 
 expect_classification $'apple\t0\t0' "RecovrKit logic" M RecovrKit/Sources/RecovrKit/Scoring/Recovery.swift
 expect_classification $'apple\t0\t0' "iPhone source" A Recovr/TodayView.swift
@@ -109,6 +123,12 @@ expect_classification $'blocked\t0\t0' "unlisted fixtures root stays denied" \
 expect_classification $'blocked\t0\t0' "unlisted new script stays denied" \
   A scripts/xcode-cloud-nuke.sh
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
+expect_classification $'blocked\t0\t0' "repository integrity workflow lookalike" \
+  A .github/workflows/repo-integrity-sentinel-copy.yml
+expect_classification $'blocked\t0\t0' "repository integrity policy lookalike" \
+  A .github/repo-integrity-policy.json.bak
+expect_classification $'blocked\t0\t0' "unlisted repository integrity module" \
+  A scripts/repo_integrity/auto_fix.py
 expect_classification $'blocked\t0\t0' "attributes lookalike" A .gitattributes.bak
 expect_classification $'blocked\t0\t0' "ignore lookalike" A .gitignore.bak
 expect_classification $'blocked\t0\t0' "nested ignore is not the root one" A tools/.gitignore
