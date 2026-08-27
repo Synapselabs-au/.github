@@ -91,6 +91,14 @@ class CandidateRepository:
         git(self.root, "commit", "-q", "-m", message)
         return git(self.root, "rev-parse", "HEAD")
 
+    def commit_symlink(self, message: str, path: str, target: str) -> str:
+        link = self.root / path
+        link.unlink()
+        link.symlink_to(target)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", message)
+        return git(self.root, "rev-parse", "HEAD")
+
 
 class AgentContextApprovalTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -98,8 +106,16 @@ class AgentContextApprovalTests(unittest.TestCase):
         self.addCleanup(self.temporary_directory.cleanup)
         self.scratch = pathlib.Path(self.temporary_directory.name)
         self.candidate = CandidateRepository(self.scratch / "candidate")
+        self.manifest = self.scratch / "manifest.json"
+        self.manifest.write_text(MANIFEST.read_text(encoding="utf-8"), encoding="utf-8")
         self.approvals = self.scratch / "approvals.json"
         self.write_approvals([])
+
+    def write_manifest(self, manifest: dict[str, object]) -> None:
+        self.manifest.write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def write_approvals(self, approvals: list[dict[str, object]]) -> None:
         self.approvals.write_text(
@@ -137,7 +153,7 @@ class AgentContextApprovalTests(unittest.TestCase):
                 "--head-sha",
                 head_sha,
                 "--manifest",
-                str(MANIFEST),
+                str(self.manifest),
                 "--approvals",
                 str(self.approvals),
             ],
@@ -175,6 +191,16 @@ class AgentContextApprovalTests(unittest.TestCase):
 
     def test_unapproved_app_context_change_is_rejected(self) -> None:
         head = self.candidate.commit("rules", {"AGENTS.md": "changed rules\n"})
+        self.assert_rejected(APP_REPOSITORY, head)
+
+    def test_protected_file_addition_is_rejected_without_approval(self) -> None:
+        head = self.candidate.commit(
+            "add policy", {"docs/ENGINEERING_POLICY.md": "new policy\n"}
+        )
+        self.assert_rejected(APP_REPOSITORY, head)
+
+    def test_protected_file_type_change_is_rejected_without_approval(self) -> None:
+        head = self.candidate.commit_symlink("replace rules", "AGENTS.md", "README.md")
         self.assert_rejected(APP_REPOSITORY, head)
 
     def test_unapproved_website_context_change_is_rejected(self) -> None:
@@ -246,6 +272,44 @@ class AgentContextApprovalTests(unittest.TestCase):
         )
         self.assert_rejected(APP_REPOSITORY, head)
 
+    def test_boolean_manifest_version_is_rejected(self) -> None:
+        head = self.candidate.commit("product", {"Recovr/App.swift": "product\n"})
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        manifest["version"] = True
+        self.write_manifest(manifest)
+        self.assert_rejected(APP_REPOSITORY, head)
+
+    def test_boolean_approval_register_version_is_rejected(self) -> None:
+        head = self.candidate.commit("product", {"Recovr/App.swift": "product\n"})
+        self.approvals.write_text(
+            json.dumps({"version": True, "approvals": []}) + "\n",
+            encoding="utf-8",
+        )
+        self.assert_rejected(APP_REPOSITORY, head)
+
+    def test_noncanonical_manifest_path_is_rejected_before_diff_matching(self) -> None:
+        head = self.candidate.commit("rules", {"AGENTS.md": "changed rules\n"})
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        paths = manifest["repositories"][APP_REPOSITORY]["protected_paths"]
+        paths.remove("AGENTS.md")
+        paths.append("./AGENTS.md")
+        paths.sort()
+        self.write_manifest(manifest)
+        result = self.verify(APP_REPOSITORY, head)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Invalid protected path", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_noncanonical_approval_path_is_rejected_as_malformed(self) -> None:
+        head = self.candidate.commit("rules", {"AGENTS.md": "changed rules\n"})
+        self.write_approvals(
+            [self.approval(APP_REPOSITORY, head, ["./AGENTS.md"])]
+        )
+        result = self.verify(APP_REPOSITORY, head)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Invalid protected path", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_malformed_approval_records_are_rejected_cleanly(self) -> None:
         head = self.candidate.commit("rules", {"AGENTS.md": "changed rules\n"})
         malformed_records = [
@@ -297,6 +361,9 @@ class AgentContextApprovalTests(unittest.TestCase):
     def test_unrecognized_repository_is_rejected(self) -> None:
         head = self.candidate.commit("product", {"Recovr/App.swift": "product\n"})
         self.assert_rejected("Synapselabs-au/Unknown", head)
+
+    def test_unknown_well_formed_head_sha_is_rejected(self) -> None:
+        self.assert_rejected(APP_REPOSITORY, "f" * 40)
 
 
 if __name__ == "__main__":

@@ -63,6 +63,7 @@ def require_sorted_paths(value: Any, description: str) -> list[str]:
         candidate = pathlib.PurePosixPath(path)
         if (
             candidate.is_absolute()
+            or candidate.as_posix() != path
             or path.endswith("/")
             or "//" in path
             or any(part in ("", ".", "..") for part in candidate.parts)
@@ -78,7 +79,11 @@ def load_manifest(path: pathlib.Path) -> dict[str, set[str]]:
         {"version", "repositories"},
         "Agent-context path manifest",
     )
-    if manifest["version"] != 1 or not isinstance(manifest["repositories"], dict):
+    if (
+        type(manifest["version"]) is not int
+        or manifest["version"] != 1
+        or not isinstance(manifest["repositories"], dict)
+    ):
         raise VerificationError("Unsupported agent-context path manifest.")
     repositories: dict[str, set[str]] = {}
     for repository, value in manifest["repositories"].items():
@@ -109,7 +114,11 @@ def load_approvals(
         {"version", "approvals"},
         "Agent-context approval register",
     )
-    if register["version"] != 1 or not isinstance(register["approvals"], list):
+    if (
+        type(register["version"]) is not int
+        or register["version"] != 1
+        or not isinstance(register["approvals"], list)
+    ):
         raise VerificationError("Unsupported agent-context approval register.")
     approvals: dict[tuple[str, str], list[str]] = {}
     for index, value in enumerate(register["approvals"]):
