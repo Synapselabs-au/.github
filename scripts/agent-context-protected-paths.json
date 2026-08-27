@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "repositories": {
+    "Synapselabs-au/Underbark": {
+      "protected_paths": [
+        ".github/CODEOWNERS",
+        ".github/repo-integrity-policy.json",
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "AGENTS.md",
+        "Config/XcodeCloudPolicy.json",
+        "ci_scripts/ci_pre_xcodebuild.sh",
+        "docs/ENGINEERING_POLICY.md",
+        "docs/PRODUCT_WORKFLOW.md",
+        "docs/RELEASING.md",
+        "docs/TRUSTED_VERIFICATION.md",
+        "docs/USER_FACING_COPY_POLICY.md",
+        "docs/XCODE_CLOUD.md",
+        "docs/privacy/USER_FACING_CLAIMS.md",
+        "scripts/repo_integrity/__init__.py",
+        "scripts/repo_integrity/core.py",
+        "scripts/repo_integrity/deterministic.py",
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/repo_integrity/issues.py",
+        "scripts/repo_integrity/reporting.py",
+        "scripts/repo_integrity/runner.py",
+        "scripts/repo_integrity/semantic.py",
+        "scripts/repo_integrity_audit.py",
+        "scripts/tests/test_repo_integrity_audit.py",
+        "scripts/verify-governance.sh"
+      ]
+    },
+    "Synapselabs-au/Underbark-Web": {
+      "protected_paths": [
+        "AGENTS.md",
+        "docs/USER_FACING_CLAIM_HANDOFF.md",
+        "docs/USER_FACING_COPY_POLICY.md"
+      ]
+    }
+  }
+}
