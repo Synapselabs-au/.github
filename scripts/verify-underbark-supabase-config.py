@@ -10,23 +10,31 @@ import tomllib
 # The approved Supabase configuration semantics. Keep this a tuple: a config
 # change lands as a two-digest transition window (old + new) so open PRs that
 # do not touch the configuration keep passing, then the old digest is retired
-# once the change merges to dev. Current window: dev after Underbark #261,
-# plus Underbark #317 (ADR-042 dormant continuity backup server).
+# once the change merges to dev. Current window: dev as it stands, plus
+# Underbark #384 (the ADR-046 dormant analytics contribution server).
 #
-# The #317 digest adds exactly four keys and removes or changes none:
-#   functions.continuity-{status,upload,download,delete}.verify_jwt = true
-# Verified by recomputing both digests from the two config.toml revisions
-# before approval; every addition tightens auth on a new endpoint. Retire
-# b2157fa0 once #317 merges to dev.
-# ([functions.app-feedback], verify_jwt = false).
+# Verify every incoming digest the same way: recompute both digests from the
+# two config.toml revisions, then diff the parsed configurations key by key
+# rather than reading the text diff. The approval question is not "how many
+# lines changed" but "what did the semantics gain, lose, or alter" — a
+# reordering changes the text and not the digest, while a single flipped
+# verify_jwt changes the digest and barely the text.
 EXPECTED_SHA256S = (
     # Current dev.
     "fbc0abc43022192ce6291a5070dffa3f61a7d5855d5d6a19f2dae17a2c70e5f0",
-    # Underbark PR #336: adds [functions.research-contribute] and
-    # [functions.research-revoke], both verify_jwt = true. Approved by the owner
-    # on 2026-08-25 after reviewing the nine-line diff. Drop this entry once #336
-    # has merged and the entry above is no longer the incoming value.
-    "eadbcb24de8495e51d4d39c56a55655ead4fbb62db736c16371855dd5692b07d",
+    # Underbark PR #384: adds [functions.analytics-consent],
+    # [functions.analytics-grant] and [functions.analytics-revoke], all three
+    # verify_jwt = true. Recomputed from both config.toml revisions before
+    # approval: exactly three keys added, zero removed, zero changed, and every
+    # addition tightens auth on a new endpoint. Approved by the owner on
+    # 2026-08-27. Drop this entry once #384 has merged and the entry above is
+    # no longer the incoming value.
+    #
+    # This REPLACES PR #336's research digest rather than sitting beside it.
+    # #336 was the research contribution server, a design that ADR-046
+    # superseded and withdrew; that branch will not merge, so its digest was
+    # holding a slot in a window sized for exactly one incoming change.
+    "dad6cd0a1af7e4357311208966f2ae76b87735da99ef6006bef3fcdaffb3b7da",
 )
 
 

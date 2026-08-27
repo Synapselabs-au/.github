@@ -49,6 +49,16 @@ while IFS= read -r -d '' status; do
     supabase/migrations/*|supabase/tests/*|supabase/seed.sql|supabase/schemas/*)
       backend_database=1
       ;;
+    supabase-analytics/functions/*)
+      backend_functions=1
+      ;;
+    supabase-analytics/config.toml)
+      backend_functions=1
+      backend_database=1
+      ;;
+    supabase-analytics/migrations/*|supabase-analytics/tests/*|supabase-analytics/seed.sql|supabase-analytics/schemas/*)
+      backend_database=1
+      ;;
     scripts/archive-app.sh|scripts/render-brand-assets.sh|scripts/verify-archive.sh|scripts/verify-brand.sh|scripts/verify-distribution-bundles.sh|scripts/verify-governance.sh|scripts/verify-ipa.sh|scripts/verify-pr-source-policy-tests.sh|scripts/verify-pr-source-policy.sh|scripts/verify-release-record.sh|scripts/verify-signing.sh|scripts/verify-storekit-catalogue.sh|scripts/verify-version-change-policy-tests.sh|scripts/verify-version-change-policy.sh|scripts/verify-version.sh|scripts/verify-xcode-cloud-config.sh|scripts/verify-xcode-cloud-prebuild-tests.sh|scripts/version.sh|scripts/with-xcode-lane.sh|scripts/xcode-cloud-audit.sh|scripts/xcode-cloud-start-pr.sh|scripts/xcode-lane-status.sh)
       apple=1
       ;;
