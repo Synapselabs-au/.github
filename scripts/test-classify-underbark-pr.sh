@@ -105,9 +105,11 @@ expect_classification $'backend\t0\t1' "Supabase migration" M supabase/migration
 expect_classification $'backend\t0\t1' "fixture Supabase migration" A supabase/migrations/20260812000000_fixture.sql
 expect_classification $'backend\t0\t1' "Supabase database test" M supabase/tests/example.sql
 expect_classification $'backend\t1\t1' "Supabase configuration" M supabase/config.toml
-expect_classification $'backend\t1\t1' "approved launch load harness" \
-  A scripts/load/underbark-launch-load.ts \
-  A scripts/load/underbark-load-core.ts \
+expect_classification $'backend\t1\t1' "approved launch load CLI" \
+  A scripts/load/underbark-launch-load.ts
+expect_classification $'backend\t1\t1' "approved launch load core" \
+  A scripts/load/underbark-load-core.ts
+expect_classification $'backend\t1\t1' "approved launch load core tests" \
   A scripts/tests/underbark-load-core-tests.ts
 expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
 expect_classification $'backend\t0\t1' "Supabase schema" M supabase/schemas/example.sql
