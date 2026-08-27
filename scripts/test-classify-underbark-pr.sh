@@ -72,6 +72,9 @@ expect_classification $'apple\t0\t0' "Markdown inside an iPhone target" M Recovr
 expect_classification $'apple\t0\t0' "Markdown inside a Watch target" M RecovrWatch/RuntimeContent.md
 expect_classification $'apple\t0\t0' "project configuration" M project.yml
 expect_classification $'apple\t0\t0' "signing script" M scripts/verify-signing.sh
+expect_classification $'apple\t0\t0' "user-facing copy verifier and fixtures" \
+  A scripts/verify-user-facing-copy.sh \
+  A scripts/tests/verify-user-facing-copy-tests.sh
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
