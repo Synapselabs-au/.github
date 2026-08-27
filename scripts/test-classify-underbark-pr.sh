@@ -97,8 +97,10 @@ expect_classification $'apple\t0\t0' "Xcode Cloud smoke and manual-start tooling
 expect_classification $'apple\t0\t0' "TestFlight release automation" \
   A Config/TestFlightWhatToTest-en-AU.txt \
   A scripts/release-testflight.sh \
+  A scripts/testflight-build-retention.sh \
   A scripts/lib/app-store-connect.sh \
   A scripts/tests/release-testflight-tests.sh \
+  A scripts/tests/testflight-build-retention-tests.sh \
   A scripts/tests/app-store-connect-tests.sh \
   A scripts/tests/fixtures/app-store-connect/build-valid.json
 expect_classification $'blocked\t0\t0' "unknown nested App Store Connect fixture" \
