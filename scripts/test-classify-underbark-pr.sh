@@ -148,6 +148,20 @@ expect_classification $'blocked\t0\t0' "AlarmShared traversal" A AlarmShared/../
 expect_classification $'blocked\t0\t0' "AlarmKit test duplicate separator" A RecovrAlarmKitTests//WakeAlarmServiceTests.swift
 expect_classification $'blocked\t0\t0' "AlarmShared newline" A $'AlarmShared/WakeAlarm\nMetadata.swift'
 expect_classification $'blocked\t0\t0' "AlarmKit test carriage return" A $'RecovrAlarmKitTests/WakeAlarm\rServiceTests.swift'
+# The supabase-analytics/ tree was classified as backend for one day, for
+# Underbark #384's second Supabase project. #384 folded that project into the
+# main one before merging, so the directory never existed on a merged branch
+# and these paths went back to being unknown. Pinned as fixtures because the
+# classifier's default-deny is what now covers them: if the tree is ever
+# reintroduced, the gate must stop and somebody must decide, rather than the
+# paths quietly resolving to backend from a rule nothing exercises.
+expect_classification $'blocked\t0\t0' "retired analytics project config" \
+  A supabase-analytics/config.toml
+expect_classification $'blocked\t0\t0' "retired analytics project function" \
+  A supabase-analytics/functions/analytics-contribute/index.ts
+expect_classification $'blocked\t0\t0' "retired analytics project migration" \
+  A supabase-analytics/migrations/20260826120000_create_analytics.sql
+
 expect_classification $'blocked\t0\t0' "empty diff"
 expect_classification $'blocked\t0\t0' "malformed status pair" M
 expect_classification $'blocked\t0\t0' "rename ambiguity" R100 Recovr/Old.swift Recovr/New.swift

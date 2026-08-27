@@ -23,18 +23,26 @@ EXPECTED_SHA256S = (
     # Current dev.
     "fbc0abc43022192ce6291a5070dffa3f61a7d5855d5d6a19f2dae17a2c70e5f0",
     # Underbark PR #384: adds [functions.analytics-consent],
-    # [functions.analytics-grant] and [functions.analytics-revoke], all three
-    # verify_jwt = true. Recomputed from both config.toml revisions before
-    # approval: exactly three keys added, zero removed, zero changed, and every
-    # addition tightens auth on a new endpoint. Approved by the owner on
-    # 2026-08-27. Drop this entry once #384 has merged and the entry above is
-    # no longer the incoming value.
+    # [functions.analytics-contribute] and [functions.analytics-revoke], all
+    # three verify_jwt = true. Recomputed from both config.toml revisions
+    # before approval: exactly three keys added, zero removed, zero changed,
+    # no section outside [functions] altered, and every addition tightens auth
+    # on a new endpoint. Approved by the owner on 2026-08-27. Drop this entry
+    # once #384 has merged and the entry above is no longer the incoming value.
     #
-    # This REPLACES PR #336's research digest rather than sitting beside it.
-    # #336 was the research contribution server, a design that ADR-046
-    # superseded and withdrew; that branch will not merge, so its digest was
-    # holding a slot in a window sized for exactly one incoming change.
-    "dad6cd0a1af7e4357311208966f2ae76b87735da99ef6006bef3fcdaffb3b7da",
+    # This REPLACES the digest approved for #384 earlier the same day
+    # (dad6cd0a…), which named [functions.analytics-grant] where this names
+    # [functions.analytics-contribute]. #384 folded its second Supabase
+    # project into the main one, which deleted the grant endpoint and moved
+    # the contribute endpoint into this project; the block count is unchanged
+    # at three and every one is still verify_jwt = true. The earlier digest is
+    # retired rather than kept beside this one: it describes a shape that no
+    # longer exists on any branch that will merge.
+    #
+    # That entry in turn replaced PR #336's research digest. #336 was the
+    # research contribution server, a design that ADR-046 superseded and
+    # withdrew; that branch will not merge.
+    "e8fbde2f09013fce820ac8e2b55e31f95fe7e8d608471e62b2cfecc33cc04bf0",
 )
 
 
