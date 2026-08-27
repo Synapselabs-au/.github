@@ -101,6 +101,8 @@ expect_classification $'apple\t0\t0' "TestFlight release automation" \
   A scripts/tests/release-testflight-tests.sh \
   A scripts/tests/app-store-connect-tests.sh \
   A scripts/tests/fixtures/app-store-connect/build-valid.json
+expect_classification $'blocked\t0\t0' "unknown nested App Store Connect fixture" \
+  A scripts/tests/fixtures/app-store-connect/nested/evil.json
 expect_classification $'apple\t0\t0' "nested Xcode Cloud fixture" \
   A scripts/tests/fixtures/xcode-cloud/drift/enabled-flip.json
 expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M Recovr/App.swift
