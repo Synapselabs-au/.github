@@ -105,6 +105,12 @@ expect_classification $'backend\t0\t1' "Supabase migration" M supabase/migration
 expect_classification $'backend\t0\t1' "fixture Supabase migration" A supabase/migrations/20260812000000_fixture.sql
 expect_classification $'backend\t0\t1' "Supabase database test" M supabase/tests/example.sql
 expect_classification $'backend\t1\t1' "Supabase configuration" M supabase/config.toml
+expect_classification $'backend\t1\t1' "approved launch load CLI" \
+  A scripts/load/underbark-launch-load.ts
+expect_classification $'backend\t1\t1' "approved launch load core" \
+  A scripts/load/underbark-load-core.ts
+expect_classification $'backend\t1\t1' "approved launch load core tests" \
+  A scripts/tests/underbark-load-core-tests.ts
 expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
 expect_classification $'backend\t0\t1' "Supabase schema" M supabase/schemas/example.sql
 expect_classification $'backend\t1\t1' "function plus migration" \
@@ -125,6 +131,8 @@ expect_classification $'blocked\t0\t0' "unlisted fixtures root stays denied" \
   A scripts/tests/fixtures/other-tool/data.json
 expect_classification $'blocked\t0\t0' "unlisted new script stays denied" \
   A scripts/xcode-cloud-nuke.sh
+expect_classification $'blocked\t0\t0' "unlisted load script stays denied" \
+  A scripts/load/arbitrary.ts
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
 expect_classification $'blocked\t0\t0' "repository integrity workflow lookalike" \
   A .github/workflows/repo-integrity-sentinel-copy.yml
