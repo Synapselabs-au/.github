@@ -2,7 +2,7 @@
   "version": 1,
   "approvals": [
     {
-      "head_sha": "31691fdb7f9ed5877140ce07da9378516cf8e869",
+      "head_sha": "ccffa00162a2017c018d874be8e996c23e4b426a",
       "protected_paths": [
         "AGENTS.md",
         "docs/ENGINEERING_POLICY.md",
