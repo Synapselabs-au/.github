@@ -75,6 +75,18 @@ expect_classification $'apple\t0\t0' "signing script" M scripts/verify-signing.s
 expect_classification $'apple\t0\t0' "user-facing copy verifier and fixtures" \
   A scripts/verify-user-facing-copy.sh \
   A scripts/tests/verify-user-facing-copy-tests.sh
+expect_classification $'apple\t0\t0' "English localization tooling and fixtures" \
+  A scripts/sync-english-localizations.py \
+  A scripts/tests/test_localization_project_config.py \
+  A scripts/tests/test_sync_english_localizations.py \
+  A scripts/tests/test_task5_iphone_localization.py \
+  A scripts/tests/test_task6_watch_widget_localization.py \
+  A scripts/tests/test_verify_app_store_localizations.py \
+  A scripts/tests/test_verify_localizations.py \
+  A scripts/tests/verify-storekit-catalogue-tests.sh \
+  A scripts/verify-app-store-localizations.py \
+  A scripts/verify-localizations.py \
+  A scripts/xcstrings_schema.py
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
