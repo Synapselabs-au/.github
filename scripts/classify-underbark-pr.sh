@@ -10,7 +10,15 @@ backend_functions=0
 backend_database=0
 blocked=0
 
-while IFS= read -r -d '' status; do
+while true; do
+  status=''
+  if ! IFS= read -r -d '' status; then
+    if [[ -n "$status" ]]; then
+      blocked=1
+    fi
+    break
+  fi
+
   seen=1
   if ! IFS= read -r -d '' path; then
     blocked=1
@@ -26,7 +34,7 @@ while IFS= read -r -d '' status; do
   esac
 
   case "$path" in
-    ''|/*|./*|../*|*/./*|*/../*|*//*|*/|*$'\t'*|*$'\n'*|*$'\r'*)
+    ''|/*|./*|../*|*/.|*/..|*/./*|*/../*|*//*|*/|*$'\t'*|*$'\n'*|*$'\r'*)
       blocked=1
       continue
       ;;
@@ -37,6 +45,9 @@ while IFS= read -r -d '' status; do
       apple=1
       ;;
     project.yml)
+      apple=1
+      ;;
+    docs/release/app-store-localizations/en-AU.json|docs/release/app-store-localizations/en-GB.json|docs/release/app-store-localizations/en-US.json)
       apple=1
       ;;
     supabase/functions/*)

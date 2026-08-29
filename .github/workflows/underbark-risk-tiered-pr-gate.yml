@@ -75,41 +75,35 @@ jobs:
           python3 .gate/scripts/verify-underbark-supabase-config.py \
             .candidate/supabase/config.toml
 
-          if git -C .candidate diff --quiet "$EVENT_BASE_SHA...$EVENT_HEAD"; then
-            classification="static"
-            backend_functions=0
-            backend_database=0
-          else
-            classification_record="$(
-              git -C .candidate diff --name-status --no-renames -z \
-                "$EVENT_BASE_SHA...$EVENT_HEAD" \
-                | .gate/scripts/classify-underbark-pr.sh
-            )"
-            IFS=$'\t' read -r classification backend_functions backend_database \
-              <<<"$classification_record"
+          classification_record="$(
+            git -C .candidate diff --name-status --no-renames -z \
+              "$EVENT_BASE_SHA...$EVENT_HEAD" \
+              | .gate/scripts/classify-underbark-pr.sh
+          )"
+          IFS=$'\t' read -r classification backend_functions backend_database \
+            <<<"$classification_record"
 
-            case "$classification" in
-              static|backend|apple|apple-backend|blocked) ;;
-              *)
-                echo "Unexpected verification classification: ${classification}." >&2
-                exit 1
-                ;;
-            esac
-            case "$backend_functions:$backend_database" in
-              0:0|0:1|1:0|1:1) ;;
-              *)
-                echo "Invalid backend verification flags." >&2
-                exit 1
-                ;;
-            esac
-            if [[ "$classification_record" != "$classification"$'\t'"$backend_functions"$'\t'"$backend_database" ]]; then
-              echo "Invalid trusted classifier output." >&2
+          case "$classification" in
+            static|backend|apple|apple-backend|blocked) ;;
+            *)
+              echo "Unexpected verification classification: ${classification}." >&2
               exit 1
-            fi
-            if [[ "$classification" == "blocked" ]]; then
-              echo "The diff contains an unclassified path. Update the trusted gate before merge." >&2
+              ;;
+          esac
+          case "$backend_functions:$backend_database" in
+            0:0|0:1|1:0|1:1) ;;
+            *)
+              echo "Invalid backend verification flags." >&2
               exit 1
-            fi
+              ;;
+          esac
+          if [[ "$classification_record" != "$classification"$'\t'"$backend_functions"$'\t'"$backend_database" ]]; then
+            echo "Invalid trusted classifier output." >&2
+            exit 1
+          fi
+          if [[ "$classification" == "blocked" ]]; then
+            echo "The diff contains an unclassified path. Update the trusted gate before merge." >&2
+            exit 1
           fi
 
           {
