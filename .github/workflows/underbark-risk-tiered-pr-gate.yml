@@ -223,8 +223,8 @@ jobs:
           }
           trap cleanup EXIT
 
-          expected_postgres_digest="public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459"
-          expected_postgres_tag="public.ecr.aws/supabase/postgres:17.6.1.158"
+          expected_postgres_digest="ghcr.io/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459"
+          expected_postgres_tag="ghcr.io/supabase/postgres:17.6.1.158"
           timeout 10m docker pull "$expected_postgres_digest"
           preflight_image_id="$(timeout 1m docker image inspect "$expected_postgres_digest" --format '{{.Id}}')"
           timeout 1m docker tag "$preflight_image_id" "$expected_postgres_tag"
