@@ -10,8 +10,9 @@ import tomllib
 # The approved Supabase configuration semantics. Keep this a tuple: a config
 # change lands as a two-digest transition window (old + new) so open PRs that
 # do not touch the configuration keep passing, then the old digest is retired
-# once the change merges to dev. Current window: dev as it stands, plus
-# Underbark #384 (the ADR-046 dormant analytics contribution server).
+# once the change merges to dev. Current window: dev as it stands after
+# Underbark #384, plus Underbark #443's authenticated claim-entitlement
+# endpoint.
 #
 # Verify every incoming digest the same way: recompute both digests from the
 # two config.toml revisions, then diff the parsed configurations key by key
@@ -20,15 +21,12 @@ import tomllib
 # reordering changes the text and not the digest, while a single flipped
 # verify_jwt changes the digest and barely the text.
 EXPECTED_SHA256S = (
-    # Current dev.
-    "fbc0abc43022192ce6291a5070dffa3f61a7d5855d5d6a19f2dae17a2c70e5f0",
-    # Underbark PR #384: adds [functions.analytics-consent],
+    # Current dev after Underbark PR #384 added [functions.analytics-consent],
     # [functions.analytics-contribute] and [functions.analytics-revoke], all
     # three verify_jwt = true. Recomputed from both config.toml revisions
     # before approval: exactly three keys added, zero removed, zero changed,
     # no section outside [functions] altered, and every addition tightens auth
-    # on a new endpoint. Approved by the owner on 2026-08-27. Drop this entry
-    # once #384 has merged and the entry above is no longer the incoming value.
+    # on a new endpoint. Approved by the owner on 2026-08-27.
     #
     # This REPLACES the digest approved for #384 earlier the same day
     # (dad6cd0a…), which named [functions.analytics-grant] where this names
@@ -43,6 +41,13 @@ EXPECTED_SHA256S = (
     # research contribution server, a design that ADR-046 superseded and
     # withdrew; that branch will not merge.
     "e8fbde2f09013fce820ac8e2b55e31f95fe7e8d608471e62b2cfecc33cc04bf0",
+    # Underbark PR #443 adds only [functions.claim-entitlement] with
+    # verify_jwt = true. This keeps the endpoint behind authenticated Supabase
+    # requests. Recomputed from both config.toml revisions before approval:
+    # exactly one function key added, zero removed, zero changed, and no
+    # section outside [functions] altered. Approved by the owner on
+    # 2026-08-29. Drop the preceding digest after #443 merges to dev.
+    "b62d1e8c6d076e9d29ff7a77984a572f7355e0ceb225b3b645cc42d57ad91284",
 )
 
 
