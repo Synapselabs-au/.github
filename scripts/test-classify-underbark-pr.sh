@@ -75,21 +75,58 @@ expect_classification $'apple\t0\t0' "signing script" M scripts/verify-signing.s
 expect_classification $'apple\t0\t0' "user-facing copy verifier and fixtures" \
   A scripts/verify-user-facing-copy.sh \
   A scripts/tests/verify-user-facing-copy-tests.sh
-expect_classification $'apple\t0\t0' "English localization tooling, fixtures, and metadata" \
-  A docs/release/app-store-localizations/en-AU.json \
-  A docs/release/app-store-localizations/en-GB.json \
-  A docs/release/app-store-localizations/en-US.json \
-  A scripts/sync-english-localizations.py \
-  A scripts/tests/test_localization_project_config.py \
-  A scripts/tests/test_sync_english_localizations.py \
-  A scripts/tests/test_task5_iphone_localization.py \
-  A scripts/tests/test_task6_watch_widget_localization.py \
-  A scripts/tests/test_verify_app_store_localizations.py \
-  A scripts/tests/test_verify_localizations.py \
-  A scripts/tests/verify-storekit-catalogue-tests.sh \
-  A scripts/verify-app-store-localizations.py \
-  A scripts/verify-localizations.py \
-  A scripts/xcstrings_schema.py
+localization_fixture_paths=(
+  docs/release/app-store-localizations/en-AU.json
+  docs/release/app-store-localizations/en-GB.json
+  docs/release/app-store-localizations/en-US.json
+  scripts/sync-english-localizations.py
+  scripts/tests/test_localization_project_config.py
+  scripts/tests/test_sync_english_localizations.py
+  scripts/tests/test_task5_iphone_localization.py
+  scripts/tests/test_task6_watch_widget_localization.py
+  scripts/tests/test_verify_app_store_localizations.py
+  scripts/tests/test_verify_localizations.py
+  scripts/tests/verify-storekit-catalogue-tests.sh
+  scripts/verify-app-store-localizations.py
+  scripts/verify-localizations.py
+  scripts/xcstrings_schema.py
+)
+expected_localization_fixture_paths=(
+  docs/release/app-store-localizations/en-AU.json
+  docs/release/app-store-localizations/en-GB.json
+  docs/release/app-store-localizations/en-US.json
+  scripts/sync-english-localizations.py
+  scripts/tests/test_localization_project_config.py
+  scripts/tests/test_sync_english_localizations.py
+  scripts/tests/test_task5_iphone_localization.py
+  scripts/tests/test_task6_watch_widget_localization.py
+  scripts/tests/test_verify_app_store_localizations.py
+  scripts/tests/test_verify_localizations.py
+  scripts/tests/verify-storekit-catalogue-tests.sh
+  scripts/verify-app-store-localizations.py
+  scripts/verify-localizations.py
+  scripts/xcstrings_schema.py
+)
+if [[ "${#localization_fixture_paths[@]}" -ne 14 \
+  || "${#expected_localization_fixture_paths[@]}" -ne 14 ]]; then
+  echo "FAIL: English localization aggregate must contain exactly 14 paths." >&2
+  failures=$((failures + 1))
+else
+  for localization_index in "${!expected_localization_fixture_paths[@]}"; do
+    if [[ "${localization_fixture_paths[$localization_index]}" \
+      != "${expected_localization_fixture_paths[$localization_index]}" ]]; then
+      echo "FAIL: English localization aggregate path ${localization_index} changed or is duplicated." >&2
+      failures=$((failures + 1))
+    fi
+  done
+fi
+localization_fixture_records=()
+for localization_path in "${localization_fixture_paths[@]}"; do
+  localization_fixture_records+=(A "$localization_path")
+done
+expect_classification $'apple\t0\t0' \
+  "English localization tooling, fixtures, and metadata" \
+  "${localization_fixture_records[@]}"
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
