@@ -75,6 +75,58 @@ expect_classification $'apple\t0\t0' "signing script" M scripts/verify-signing.s
 expect_classification $'apple\t0\t0' "user-facing copy verifier and fixtures" \
   A scripts/verify-user-facing-copy.sh \
   A scripts/tests/verify-user-facing-copy-tests.sh
+localization_fixture_paths=(
+  docs/release/app-store-localizations/en-AU.json
+  docs/release/app-store-localizations/en-GB.json
+  docs/release/app-store-localizations/en-US.json
+  scripts/sync-english-localizations.py
+  scripts/tests/test_localization_project_config.py
+  scripts/tests/test_sync_english_localizations.py
+  scripts/tests/test_task5_iphone_localization.py
+  scripts/tests/test_task6_watch_widget_localization.py
+  scripts/tests/test_verify_app_store_localizations.py
+  scripts/tests/test_verify_localizations.py
+  scripts/tests/verify-storekit-catalogue-tests.sh
+  scripts/verify-app-store-localizations.py
+  scripts/verify-localizations.py
+  scripts/xcstrings_schema.py
+)
+expected_localization_fixture_paths=(
+  docs/release/app-store-localizations/en-AU.json
+  docs/release/app-store-localizations/en-GB.json
+  docs/release/app-store-localizations/en-US.json
+  scripts/sync-english-localizations.py
+  scripts/tests/test_localization_project_config.py
+  scripts/tests/test_sync_english_localizations.py
+  scripts/tests/test_task5_iphone_localization.py
+  scripts/tests/test_task6_watch_widget_localization.py
+  scripts/tests/test_verify_app_store_localizations.py
+  scripts/tests/test_verify_localizations.py
+  scripts/tests/verify-storekit-catalogue-tests.sh
+  scripts/verify-app-store-localizations.py
+  scripts/verify-localizations.py
+  scripts/xcstrings_schema.py
+)
+if [[ "${#localization_fixture_paths[@]}" -ne 14 \
+  || "${#expected_localization_fixture_paths[@]}" -ne 14 ]]; then
+  echo "FAIL: English localization aggregate must contain exactly 14 paths." >&2
+  failures=$((failures + 1))
+else
+  for localization_index in "${!expected_localization_fixture_paths[@]}"; do
+    if [[ "${localization_fixture_paths[$localization_index]}" \
+      != "${expected_localization_fixture_paths[$localization_index]}" ]]; then
+      echo "FAIL: English localization aggregate path ${localization_index} changed or is duplicated." >&2
+      failures=$((failures + 1))
+    fi
+  done
+fi
+localization_fixture_records=()
+for localization_path in "${localization_fixture_paths[@]}"; do
+  localization_fixture_records+=(A "$localization_path")
+done
+expect_classification $'apple\t0\t0' \
+  "English localization tooling, fixtures, and metadata" \
+  "${localization_fixture_records[@]}"
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
@@ -165,6 +217,10 @@ expect_classification $'blocked\t0\t0' "mixed static and unknown" M README.md A 
 expect_classification $'blocked\t0\t0' "mixed Apple and unknown" M Recovr/App.swift A tools/new-tool.sh
 expect_classification $'blocked\t0\t0' "AlarmShared traversal" A AlarmShared/../Secrets.swift
 expect_classification $'blocked\t0\t0' "AlarmKit test duplicate separator" A RecovrAlarmKitTests//WakeAlarmServiceTests.swift
+expect_classification $'blocked\t0\t0' "Apple terminal dot component" A Recovr/Views/.
+expect_classification $'blocked\t0\t0' "Apple terminal dot-dot component" A Recovr/Views/..
+expect_classification $'blocked\t0\t0' "backend terminal dot component" A supabase/functions/delete-account/.
+expect_classification $'blocked\t0\t0' "backend terminal dot-dot component" A supabase/migrations/..
 expect_classification $'blocked\t0\t0' "AlarmShared newline" A $'AlarmShared/WakeAlarm\nMetadata.swift'
 expect_classification $'blocked\t0\t0' "AlarmKit test carriage return" A $'RecovrAlarmKitTests/WakeAlarm\rServiceTests.swift'
 # The supabase-analytics/ tree was classified as backend for one day, for
@@ -184,6 +240,19 @@ expect_classification $'blocked\t0\t0' "retired analytics project migration" \
 expect_classification $'blocked\t0\t0' "empty diff"
 expect_classification $'blocked\t0\t0' "malformed status pair" M
 expect_classification $'blocked\t0\t0' "rename ambiguity" R100 Recovr/Old.swift Recovr/New.swift
+
+set +e
+trailing_fragment_actual="$(
+  printf 'A\0scripts/verify-localizations.py\0unterminated' \
+    | "$classifier" 2>/dev/null
+)"
+trailing_fragment_status="$?"
+set -e
+if [[ "$trailing_fragment_status" -ne 0 \
+  || "$trailing_fragment_actual" != $'blocked\t0\t0' ]]; then
+  echo "FAIL: unterminated trailing fragment: expected blocked, got ${trailing_fragment_actual:-<empty>} (status ${trailing_fragment_status})" >&2
+  failures=$((failures + 1))
+fi
 
 if [ "$failures" -ne 0 ]; then
   echo "${failures} classifier fixture(s) failed." >&2
