@@ -34,17 +34,22 @@ end
 reject_duplicate_keys(Psych.parse_stream(File.read(path)))
 workflow = YAML.load_file(path)
 jobs = workflow.fetch("jobs")
-expected_jobs = %w[classify website_context functions database result]
+expected_jobs = %w[governance_claims classify website_context functions database result]
 raise "unexpected job graph" unless jobs.keys == expected_jobs
 raise "pull request trigger is narrowed" unless workflow.fetch(true).fetch("pull_request").nil?
 raise "required result name changed" unless jobs.fetch("result").fetch("name") == "Underbark PR Gate result"
 required_result_count = jobs.values.count { |job| job["name"] == "Underbark PR Gate result" }
 raise "required result name is not unique" unless required_result_count == 1
 raise "classifier repository guard changed" unless jobs.fetch("classify")["if"] ==
+  "${{ github.repository == 'Synapselabs-au/Underbark' && needs.governance_claims.result == 'success' }}"
+raise "governance claims repository guard changed" unless jobs.fetch("governance_claims")["if"] ==
   "${{ github.repository == 'Synapselabs-au/Underbark' }}"
+raise "classifier does not depend on isolated governance claims" unless
+  jobs.fetch("classify").fetch("needs") == "governance_claims"
 raise "website context repository guard missing" unless jobs.fetch("website_context")["if"] ==
   "${{ github.repository == 'Synapselabs-au/Underbark-Web' }}"
-raise "terminal dependencies changed" unless jobs.fetch("result").fetch("needs") == %w[classify functions database]
+raise "terminal dependencies changed" unless jobs.fetch("result").fetch("needs") ==
+  %w[governance_claims classify functions database]
 raise "terminal job is not always-run" unless jobs.fetch("result").fetch("if").include?("always()")
 raise "workflow permissions must default to none" unless workflow.fetch("permissions") == {}
 raise "concurrency changed" unless workflow.fetch("concurrency") == {
@@ -60,6 +65,7 @@ expected_outputs = {
 raise "classifier output contract changed" unless jobs.fetch("classify").fetch("outputs") == expected_outputs
 
 expected_timeouts = {
+  "governance_claims" => 10,
   "classify" => 10,
   "website_context" => 10,
   "functions" => 45,
@@ -67,6 +73,7 @@ expected_timeouts = {
   "result" => 10,
 }
 expected_permissions = {
+  "governance_claims" => {"contents" => "read"},
   "classify" => {"contents" => "read", "pull-requests" => "read"},
   "website_context" => {"contents" => "read", "pull-requests" => "read"},
   "functions" => {"contents" => "read"},
@@ -104,7 +111,7 @@ jobs.each do |name, job|
   end
 end
 
-%w[functions database].each do |name|
+%w[governance_claims functions database].each do |name|
   body = serialized(jobs.fetch(name))
   raise "#{name} received a GitHub token" if body.include?("github.token") || body.include?("GH_TOKEN")
   raise "#{name} received a secret" if body.include?("secrets")
@@ -115,6 +122,7 @@ token_jobs = jobs.select { |_name, job| serialized(job).include?("github.token")
 raise "token-bearing job boundary changed" unless token_jobs == %w[classify website_context result]
 
 expected_run_hashes = {
+  "governance_claims" => "0ddd464456f46c99c4482305babc2a55292691faeae29812c962c13b948720b4",
   "classify" => "ee99ece901f1755a5670bec1bcc1f0aab628a694a05aa0f084e3632f76cc08ae",
   "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
   "functions" => "82f2b8709b490ba656f7e199c8ee4359efd58929a487956199bb33b3ba026192",
@@ -122,6 +130,7 @@ expected_run_hashes = {
   "result" => "74ddc71787346c4596a98626fdf715ac13b41f4a949c1a5a5c84090ff18b8afe",
 }
 expected_step_hashes = {
+  "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
   "classify" => "fa3a108d53901bbd5d313800061cb00b40ae61045443280615655fa1b3f4ff12",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
   "functions" => "1f07b1aea95365070484a72c78fbce47b932c372e100a0ca65240753a76d04be",
@@ -136,7 +145,26 @@ expected_run_hashes.each do |name, digest|
   raise "#{name} step contract changed" unless actual_steps == expected_step_hashes.fetch(name)
 end
 
+governance_claims = jobs.fetch("governance_claims")
+governance_steps = governance_claims.fetch("steps")
+raise "governance claims job must have exactly one checkout and one run step" unless
+  governance_steps.length == 2
+raise "governance claims candidate checkout changed" unless governance_steps.fetch(0).fetch("with") == {
+  "repository" => "${{ github.event.pull_request.head.repo.full_name }}",
+  "ref" => "${{ github.event.pull_request.head.sha }}",
+  "path" => ".candidate",
+  "persist-credentials" => false,
+}
+governance_body = scripts(governance_claims).fetch(0)
+raise "governance claims script execution missing" unless
+  governance_body.include?("bash .candidate/scripts/verify-claims-register.sh")
+raise "governance claims job can mutate the trusted gate" if governance_body.include?(".gate/")
+raise "governance claims job receives a GitHub token" if
+  serialized(governance_claims).include?("github.token") || serialized(governance_claims).include?("GH_TOKEN")
+
 classify = scripts(jobs.fetch("classify")).fetch(0)
+raise "trusted classifier executes candidate scripts" if
+  serialized(jobs.fetch("classify")).include?(".candidate/scripts/")
 raise "event-base diff check missing" unless classify.include?('git -C .candidate diff --check "$EVENT_BASE_SHA...$EVENT_HEAD"')
 approval_index = classify.index(".gate/scripts/verify-agent-context-approval.py")
 raise "trusted agent-context approval verifier missing" unless approval_index
@@ -216,7 +244,6 @@ forbidden = [
   "download-artifact",
   "matrix:",
   "continue-on-error",
-  ".candidate/scripts/",
   "macos-",
   "xcodebuild",
   "secrets.",
