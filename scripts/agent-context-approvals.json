@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "approvals": [
+    {
+      "head_sha": "4b54a6faf25197ba5fbddb81b84eb0e03d12ff6f",
+      "protected_paths": [
+        "AGENTS.md",
+        "docs/ENGINEERING_POLICY.md",
+        "docs/RELEASING.md",
+        "docs/TRUSTED_VERIFICATION.md",
+        "docs/USER_FACING_COPY_POLICY.md",
+        "docs/XCODE_CLOUD.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "6b0f998fef8a18a585af9055b93a8db872f9be9e",
+      "protected_paths": [
+        "AGENTS.md",
+        "docs/USER_FACING_COPY_POLICY.md"
+      ],
+      "repository": "Synapselabs-au/Underbark-Web"
+    }
+  ]
+}
