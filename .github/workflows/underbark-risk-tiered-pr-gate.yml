@@ -40,6 +40,23 @@ jobs:
           path: .candidate
           persist-credentials: false
 
+      # Two mechanical checks over the candidate's governance documents --
+      # a revalidation filed under the wrong claim, and the canonical
+      # defect-family count restated outside its single home. Five review
+      # rounds of reading kept finding exactly these two, so they are
+      # scripted; this runs the CANDIDATE's copy, so the check evolves with
+      # the branch under review. Fail-open when the script is absent, so
+      # branches cut before 2026-08-29 stay green -- a documented judgement,
+      # proportionate because this is a docs-consistency check, not an
+      # erasure guard.
+      - name: Governance claims register
+        run: |
+          if [ -f .candidate/scripts/verify-claims-register.sh ]; then
+            bash .candidate/scripts/verify-claims-register.sh
+          else
+            echo "verify-claims-register.sh absent: head predates ecec8574; no check to run"
+          fi
+
       - name: Classify exact event diff
         id: classify
         env:
