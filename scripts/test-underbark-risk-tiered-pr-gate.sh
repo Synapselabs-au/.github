@@ -118,14 +118,14 @@ expected_run_hashes = {
   "classify" => "ee99ece901f1755a5670bec1bcc1f0aab628a694a05aa0f084e3632f76cc08ae",
   "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
   "functions" => "82f2b8709b490ba656f7e199c8ee4359efd58929a487956199bb33b3ba026192",
-  "database" => "067a4774e7b76b7c289c5e034d1126efb278bd78c29fc6a9d195aee443ea7519",
+  "database" => "dcdf60915883f8607d4272b66d3e59dc04ce62e52915f666493e064077bf6d93",
   "result" => "74ddc71787346c4596a98626fdf715ac13b41f4a949c1a5a5c84090ff18b8afe",
 }
 expected_step_hashes = {
   "classify" => "fa3a108d53901bbd5d313800061cb00b40ae61045443280615655fa1b3f4ff12",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
   "functions" => "1f07b1aea95365070484a72c78fbce47b932c372e100a0ca65240753a76d04be",
-  "database" => "5055a818c5d10759ac3f9ddce0eb7661bfe4b41125118f3ebce9f0a4bd592756",
+  "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",
   "result" => "dc605f0653c15682675729a53c64c155eb366bfd4e894cd4089991a7264eee5c",
 }
 expected_run_hashes.each do |name, digest|
@@ -194,7 +194,7 @@ raise "Deno cleanup missing" unless functions.include?("trap cleanup EXIT")
 raise "Deno lock is not frozen" unless functions.include?("deno check --frozen") && functions.include?("deno test --frozen")
 
 database = scripts(jobs.fetch("database")).fetch(0)
-raise "Postgres image is not digest-pinned" unless database.include?("public.ecr.aws/supabase/postgres@sha256:")
+raise "Postgres image is not digest-pinned" unless database.include?("ghcr.io/supabase/postgres@sha256:")
 raise "database cleanup missing" unless database.include?("trap cleanup EXIT") && database.include?("supabase stop --workdir . --no-backup")
 raise "candidate SQL is not copied into the disposable database" unless database.include?("docker cp supabase/tests/.")
 raise "SQL does not fail closed" unless database.include?("ON_ERROR_STOP=1")
