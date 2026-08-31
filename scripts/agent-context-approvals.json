@@ -44,6 +44,16 @@
         "scripts/tests/test_repo_integrity_audit.py"
       ],
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "67efce88f73f232df8570ad3d3b4492d9592fea6",
+      "protected_paths": [
+        ".github/repo-integrity-policy.json",
+        "docs/XCODE_CLOUD.md",
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
