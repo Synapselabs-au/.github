@@ -79,6 +79,9 @@ expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
   A scripts/xcode-lane-status.sh
+expect_classification $'apple\t0\t0' "bounded Xcode storage implementation" \
+  A scripts/lib/xcode-storage.sh \
+  A scripts/tests/xcode-storage-tests.sh
 expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/tests/xcode-lane-tests.sh \
   A scripts/tests/xcode-lane-security-tests.sh \
