@@ -1,0 +1,10 @@
+{
+  "name": "underbark-install-hook-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "preinstall": "node -e \"require('node:fs').writeFileSync('install-hook-ran', 'ran')\"",
+    "test": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\""
+  }
+}

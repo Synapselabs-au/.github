@@ -39,6 +39,9 @@ while IFS= read -r -d '' status; do
     project.yml)
       apple=1
       ;;
+    services/apple-notifications/*)
+      backend_functions=1
+      ;;
     supabase/functions/*)
       backend_functions=1
       ;;

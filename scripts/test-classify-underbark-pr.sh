@@ -115,6 +115,14 @@ expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M R
 expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts
 expect_classification $'backend\t1\t0' "Supabase function handler" M supabase/functions/delete-account/handler.ts
 expect_classification $'backend\t1\t0' "Supabase function documentation" M supabase/functions/README.md
+expect_classification $'backend\t1\t0' "Apple notification Node service" \
+  A services/apple-notifications/.gitignore \
+  A services/apple-notifications/package-lock.json \
+  A services/apple-notifications/package.json \
+  A services/apple-notifications/api/apple-notifications.ts \
+  A services/apple-notifications/src/apple-verifier.ts \
+  A services/apple-notifications/test/notification-handler.test.ts \
+  A services/apple-notifications/vercel.json
 expect_classification $'backend\t0\t1' "Supabase migration" M supabase/migrations/20260101000000_example.sql
 expect_classification $'backend\t0\t1' "fixture Supabase migration" A supabase/migrations/20260812000000_fixture.sql
 expect_classification $'backend\t0\t1' "Supabase database test" M supabase/tests/example.sql
@@ -147,6 +155,8 @@ expect_classification $'blocked\t0\t0' "unlisted new script stays denied" \
   A scripts/xcode-cloud-nuke.sh
 expect_classification $'blocked\t0\t0' "unlisted load script stays denied" \
   A scripts/load/arbitrary.ts
+expect_classification $'blocked\t0\t0' "other services stay denied" \
+  A services/other-backend/api/index.ts
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
 expect_classification $'blocked\t0\t0' "repository integrity workflow lookalike" \
   A .github/workflows/repo-integrity-sentinel-copy.yml
