@@ -125,7 +125,7 @@ expected_run_hashes = {
   "governance_claims" => "0ddd464456f46c99c4482305babc2a55292691faeae29812c962c13b948720b4",
   "classify" => "ee99ece901f1755a5670bec1bcc1f0aab628a694a05aa0f084e3632f76cc08ae",
   "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
-  "functions" => "82f2b8709b490ba656f7e199c8ee4359efd58929a487956199bb33b3ba026192",
+  "functions" => "71e6893036a6ca083c56b3d8e484a5d0e850bb655ca002023250cf918d3802cc",
   "database" => "dcdf60915883f8607d4272b66d3e59dc04ce62e52915f666493e064077bf6d93",
   "result" => "74ddc71787346c4596a98626fdf715ac13b41f4a949c1a5a5c84090ff18b8afe",
 }
@@ -133,7 +133,7 @@ expected_step_hashes = {
   "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
   "classify" => "fa3a108d53901bbd5d313800061cb00b40ae61045443280615655fa1b3f4ff12",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
-  "functions" => "1f07b1aea95365070484a72c78fbce47b932c372e100a0ca65240753a76d04be",
+  "functions" => "ca82e1412ac4d2448a659f61a690311a14bee7ffa99c80cfd41ac6514be2e694",
   "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",
   "result" => "dc605f0653c15682675729a53c64c155eb366bfd4e894cd4089991a7264eee5c",
 }
@@ -214,12 +214,33 @@ raise "website trusted approval verifier missing" unless
   website_context.include?(".gate/scripts/verify-agent-context-approval.py")
 raise "website context job executes candidate scripts" if website_context.include?(".candidate/scripts/")
 
-functions = scripts(jobs.fetch("functions")).fetch(0)
+functions_job = jobs.fetch("functions")
+functions_steps = functions_job.fetch("steps")
+raise "functions job must check out, set up Node, and verify" unless functions_steps.length == 3
+setup_node = functions_steps.fetch(1)
+raise "Node setup action changed" unless
+  setup_node.fetch("uses") == "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+raise "Node setup version changed" unless setup_node.fetch("with") == {"node-version" => "24"}
+
+functions = scripts(functions_job).fetch(0)
 raise "Deno image is not digest-pinned" unless functions.include?("denoland/deno:2.9.5@sha256:")
 raise "Deno candidate code is host-mounted" if functions.include?("--mount") || functions.match?(/\s-v\s/)
 raise "Deno container became privileged" if functions.include?("--privileged")
 raise "Deno cleanup missing" unless functions.include?("trap cleanup EXIT")
 raise "Deno lock is not frozen" unless functions.include?("deno check --frozen") && functions.include?("deno test --frozen")
+raise "Node service presence guard missing" unless functions.include?('if [[ -d services/apple-notifications ]]; then')
+raise "Node service symlink guard missing" unless
+  functions.include?("find services/apple-notifications -type l -print -quit")
+raise "Node dependencies are not lock-installed" unless
+  functions.include?("npm --prefix services/apple-notifications ci")
+raise "Node service tests missing" unless
+  functions.include?("npm --prefix services/apple-notifications test")
+raise "Node service typecheck missing" unless
+  functions.include?("npm --prefix services/apple-notifications run typecheck")
+raise "Node production audit missing" unless
+  functions.include?("npm --prefix services/apple-notifications audit --omit=dev")
+raise "Node verification can alter Deno evidence" unless
+  functions.index("deno test --frozen") < functions.index("npm --prefix services/apple-notifications ci")
 
 database = scripts(jobs.fetch("database")).fetch(0)
 raise "Postgres image is not digest-pinned" unless database.include?("ghcr.io/supabase/postgres@sha256:")

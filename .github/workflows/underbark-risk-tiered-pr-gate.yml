@@ -239,7 +239,12 @@ jobs:
           path: .candidate
           persist-credentials: false
 
-      - name: Verify isolated Supabase functions
+      - name: Set up Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+
+      - name: Verify isolated backend functions
         working-directory: .candidate
         run: |
           set -euo pipefail
@@ -281,6 +286,17 @@ jobs:
             test -s /tmp/underbark-deno-test-files
             xargs -0 deno test --frozen --config supabase/functions/deno.json < /tmp/underbark-deno-test-files
           '
+
+          if [[ -d services/apple-notifications ]]; then
+            if find services/apple-notifications -type l -print -quit | grep -q .; then
+              echo "Symlinks are not allowed under services/apple-notifications." >&2
+              exit 1
+            fi
+            timeout 10m npm --prefix services/apple-notifications ci
+            timeout 10m npm --prefix services/apple-notifications test
+            timeout 10m npm --prefix services/apple-notifications run typecheck
+            timeout 5m npm --prefix services/apple-notifications audit --omit=dev
+          fi
 
   database:
     name: Verify backend database
