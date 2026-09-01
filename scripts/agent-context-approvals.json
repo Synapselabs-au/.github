@@ -86,6 +86,22 @@
         "scripts/tests/test_repo_integrity_audit.py"
       ],
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "f8a3abf8a970098432a25e0c8b9e802f2ce2776c",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "7fa60a3ca8c91693047da079c431425bb09a73b5",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
