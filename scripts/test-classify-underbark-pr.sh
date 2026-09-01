@@ -97,6 +97,9 @@ expect_classification $'apple\t0\t0' "Xcode Cloud smoke and manual-start tooling
   A scripts/tests/xcode-cloud-smoke-plan-tests.sh \
   A scripts/xcode-cloud-start-pr.sh \
   A scripts/tests/xcode-cloud-start-pr-tests.sh
+expect_classification $'apple\t0\t0' "Xcode Cloud source-policy tooling" \
+  A scripts/verify-xcode-cloud-source-policy.sh \
+  A scripts/verify-xcode-cloud-source-policy-tests.sh
 expect_classification $'apple\t0\t0' "TestFlight release automation" \
   A Config/TestFlightWhatToTest-en-AU.txt \
   A scripts/release-testflight.sh \
