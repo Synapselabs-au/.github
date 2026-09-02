@@ -130,6 +130,14 @@
         "docs/privacy/USER_FACING_CLAIMS.md"
       ],
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "a4459d2b4d67f20d0c3b2ed609743a262ac73314",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
