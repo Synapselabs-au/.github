@@ -43,6 +43,13 @@
       "repository": "Synapselabs-au/Underbark"
     },
     {
+      "head_sha": "18057128d4c7dc1ec7f45311f8324d733988a851",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
       "head_sha": "7872f5a5f28f7e92e776c5d306ea69ef39a69793",
       "protected_paths": [
         ".github/repo-integrity-policy.json",
