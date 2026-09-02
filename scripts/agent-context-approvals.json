@@ -146,6 +146,15 @@
         "scripts/tests/test_repo_integrity_audit.py"
       ],
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "9515005b10f889c18863be310dfe7abab9577d9d",
+      "protected_paths": [
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "scripts/repo_integrity/runner.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
