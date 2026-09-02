@@ -10,9 +10,8 @@ import tomllib
 # The approved Supabase configuration semantics. Keep this a tuple: a config
 # change lands as a two-digest transition window (old + new) so open PRs that
 # do not touch the configuration keep passing, then the old digest is retired
-# once the change merges to dev. Current window: dev as it stands after
-# Underbark #384, plus Underbark #443's authenticated claim-entitlement
-# endpoint.
+# once the change merges to dev. Current window: dev after Underbark #443,
+# plus Underbark #545's dormant continuity reconciliation endpoint.
 #
 # Verify every incoming digest the same way: recompute both digests from the
 # two config.toml revisions, then diff the parsed configurations key by key
@@ -21,33 +20,18 @@ import tomllib
 # reordering changes the text and not the digest, while a single flipped
 # verify_jwt changes the digest and barely the text.
 EXPECTED_SHA256S = (
-    # Current dev after Underbark PR #384 added [functions.analytics-consent],
-    # [functions.analytics-contribute] and [functions.analytics-revoke], all
-    # three verify_jwt = true. Recomputed from both config.toml revisions
-    # before approval: exactly three keys added, zero removed, zero changed,
-    # no section outside [functions] altered, and every addition tightens auth
-    # on a new endpoint. Approved by the owner on 2026-08-27.
-    #
-    # This REPLACES the digest approved for #384 earlier the same day
-    # (dad6cd0a…), which named [functions.analytics-grant] where this names
-    # [functions.analytics-contribute]. #384 folded its second Supabase
-    # project into the main one, which deleted the grant endpoint and moved
-    # the contribute endpoint into this project; the block count is unchanged
-    # at three and every one is still verify_jwt = true. The earlier digest is
-    # retired rather than kept beside this one: it describes a shape that no
-    # longer exists on any branch that will merge.
-    #
-    # That entry in turn replaced PR #336's research digest. #336 was the
-    # research contribution server, a design that ADR-046 superseded and
-    # withdrew; that branch will not merge.
-    "e8fbde2f09013fce820ac8e2b55e31f95fe7e8d608471e62b2cfecc33cc04bf0",
-    # Underbark PR #443 adds only [functions.claim-entitlement] with
-    # verify_jwt = true. This keeps the endpoint behind authenticated Supabase
-    # requests. Recomputed from both config.toml revisions before approval:
-    # exactly one function key added, zero removed, zero changed, and no
-    # section outside [functions] altered. Approved by the owner on
-    # 2026-08-29. Drop the preceding digest after #443 merges to dev.
+    # Current dev after Underbark PR #443. Recomputed from origin/dev before
+    # approval. The older pre-#443 digest is retired because #443 has merged.
     "b62d1e8c6d076e9d29ff7a77984a572f7355e0ceb225b3b645cc42d57ad91284",
+    # Underbark PR #545 adds only [functions.continuity-reconcile] with
+    # verify_jwt = false. The function remains release-disabled and dormant.
+    # Its handler requires an exact scheduler secret before it makes any
+    # database or Storage call. Recomputed from origin/dev and PR #545 before
+    # approval: exactly one function key was added, zero were removed, zero
+    # were changed, and no section outside [functions] changed. Approved by
+    # the owner on 2026-09-02. Drop the preceding digest after #545 merges to
+    # dev.
+    "5f63e9f4c83233ae642699241ac9766dbd12e1c53cb98029b7613c88c314e600",
 )
 
 
