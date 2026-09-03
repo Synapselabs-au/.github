@@ -30,7 +30,6 @@ APP_PROTECTED_PATHS = [
     "docs/TRUSTED_VERIFICATION.md",
     "docs/USER_FACING_COPY_POLICY.md",
     "docs/XCODE_CLOUD.md",
-    "docs/privacy/USER_FACING_CLAIMS.md",
     "scripts/repo_integrity/__init__.py",
     "scripts/repo_integrity/core.py",
     "scripts/repo_integrity/deterministic.py",
@@ -187,6 +186,13 @@ class AgentContextApprovalTests(unittest.TestCase):
 
     def test_ordinary_product_change_needs_no_approval(self) -> None:
         head = self.candidate.commit("product", {"Recovr/App.swift": "product\n"})
+        self.assert_accepted(APP_REPOSITORY, head)
+
+    def test_sensitive_claim_register_change_needs_no_owner_approval(self) -> None:
+        head = self.candidate.commit(
+            "claim evidence",
+            {"docs/privacy/USER_FACING_CLAIMS.md": "reviewed claim evidence\n"},
+        )
         self.assert_accepted(APP_REPOSITORY, head)
 
     def test_unapproved_app_context_change_is_rejected(self) -> None:
