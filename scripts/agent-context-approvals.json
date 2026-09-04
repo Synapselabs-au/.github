@@ -171,6 +171,24 @@
         "scripts/tests/test_repo_integrity_audit.py"
       ],
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "833a1e4d5adf637d2bea924dfc634d7d98b9a54d",
+      "protected_paths": [
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "scripts/repo_integrity/runner.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "f9e4c00fd3c7a8556b7cafeeda3f5c6d3942343e",
+      "protected_paths": [
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "scripts/repo_integrity/runner.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
