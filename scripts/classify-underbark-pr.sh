@@ -52,7 +52,7 @@ while IFS= read -r -d '' status; do
     supabase/migrations/*|supabase/tests/*|supabase/seed.sql|supabase/schemas/*)
       backend_database=1
       ;;
-    scripts/load/underbark-launch-load.ts|scripts/load/underbark-load-core.ts|scripts/tests/underbark-load-core-tests.ts)
+    scripts/load/underbark-launch-load.ts|scripts/load/underbark-load-core.ts|scripts/load/underbark-provider-metrics.ts|scripts/tests/underbark-load-core-tests.ts|scripts/tests/underbark-provider-metrics-tests.ts)
       backend_functions=1
       backend_database=1
       ;;
