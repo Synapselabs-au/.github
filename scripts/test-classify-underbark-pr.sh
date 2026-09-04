@@ -136,6 +136,10 @@ expect_classification $'backend\t1\t1' "approved launch load core" \
   A scripts/load/underbark-load-core.ts
 expect_classification $'backend\t1\t1' "approved launch load core tests" \
   A scripts/tests/underbark-load-core-tests.ts
+expect_classification $'backend\t1\t1' "approved provider metrics collector" \
+  A scripts/load/underbark-provider-metrics.ts
+expect_classification $'backend\t1\t1' "approved provider metrics collector tests" \
+  A scripts/tests/underbark-provider-metrics-tests.ts
 expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
 expect_classification $'backend\t0\t1' "Supabase schema" M supabase/schemas/example.sql
 expect_classification $'backend\t1\t1' "function plus migration" \
@@ -158,6 +162,14 @@ expect_classification $'blocked\t0\t0' "unlisted new script stays denied" \
   A scripts/xcode-cloud-nuke.sh
 expect_classification $'blocked\t0\t0' "unlisted load script stays denied" \
   A scripts/load/arbitrary.ts
+expect_classification $'blocked\t0\t0' "provider metrics collector suffix lookalike stays denied" \
+  A scripts/load/underbark-provider-metrics.ts.bak
+expect_classification $'blocked\t0\t0' "provider metrics test suffix lookalike stays denied" \
+  A scripts/tests/underbark-provider-metrics-tests.ts.bak
+expect_classification $'blocked\t0\t0' "nested provider metrics collector stays denied" \
+  A scripts/load/archive/underbark-provider-metrics.ts
+expect_classification $'blocked\t0\t0' "nested provider metrics test stays denied" \
+  A scripts/tests/archive/underbark-provider-metrics-tests.ts
 expect_classification $'blocked\t0\t0' "other services stay denied" \
   A services/other-backend/api/index.ts
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
