@@ -140,6 +140,10 @@ expect_classification $'backend\t1\t1' "approved provider metrics collector" \
   A scripts/load/underbark-provider-metrics.ts
 expect_classification $'backend\t1\t1' "approved provider metrics collector tests" \
   A scripts/tests/underbark-provider-metrics-tests.ts
+expect_classification $'backend\t1\t1' "approved Auth provider posture verifier" \
+  A scripts/verify-supabase-auth-provider-posture.ts
+expect_classification $'backend\t1\t1' "approved Auth provider posture verifier tests" \
+  A scripts/tests/underbark-auth-provider-posture-tests.ts
 expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
 expect_classification $'backend\t0\t1' "Supabase schema" M supabase/schemas/example.sql
 expect_classification $'backend\t1\t1' "function plus migration" \
@@ -170,6 +174,14 @@ expect_classification $'blocked\t0\t0' "nested provider metrics collector stays 
   A scripts/load/archive/underbark-provider-metrics.ts
 expect_classification $'blocked\t0\t0' "nested provider metrics test stays denied" \
   A scripts/tests/archive/underbark-provider-metrics-tests.ts
+expect_classification $'blocked\t0\t0' "Auth provider posture verifier suffix lookalike stays denied" \
+  A scripts/verify-supabase-auth-provider-posture.ts.bak
+expect_classification $'blocked\t0\t0' "Auth provider posture test suffix lookalike stays denied" \
+  A scripts/tests/underbark-auth-provider-posture-tests.ts.bak
+expect_classification $'blocked\t0\t0' "nested Auth provider posture verifier stays denied" \
+  A scripts/archive/verify-supabase-auth-provider-posture.ts
+expect_classification $'blocked\t0\t0' "nested Auth provider posture test stays denied" \
+  A scripts/tests/archive/underbark-auth-provider-posture-tests.ts
 expect_classification $'blocked\t0\t0' "other services stay denied" \
   A services/other-backend/api/index.ts
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
