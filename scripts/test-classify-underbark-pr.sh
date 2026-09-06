@@ -75,6 +75,11 @@ expect_classification $'apple\t0\t0' "signing script" M scripts/verify-signing.s
 expect_classification $'apple\t0\t0' "user-facing copy verifier and fixtures" \
   A scripts/verify-user-facing-copy.sh \
   A scripts/tests/verify-user-facing-copy-tests.sh
+for mini_path in scripts/with-build-host.sh scripts/lib/build_host.py scripts/tests/test_build_host.py scripts/tests/test_build_host_review.py; do
+  expect_classification $'apple\t0\t0' "exact mini routing path ${mini_path}" A "$mini_path"
+  expect_classification $'blocked\t0\t0' "unapproved mini routing sibling ${mini_path}" A "${mini_path}.extra"
+done
+
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
