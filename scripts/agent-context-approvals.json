@@ -217,6 +217,13 @@
         "AGENTS.md"
       ],
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "52a265921c46cfa96b161787be7aebc88e2a69b3",
+      "protected_paths": [
+        "AGENTS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
