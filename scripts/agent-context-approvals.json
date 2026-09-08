@@ -247,6 +247,13 @@
       "repository": "Synapselabs-au/Underbark"
     },
     {
+      "head_sha": "cf58add7e54303fd2ba21f1bc6217f3d9fd9131b",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
       "head_sha": "0cb471e437f5f3e5bdd65abdff4857e64687e09c",
       "protected_paths": [
         "docs/privacy/USER_FACING_CLAIMS.md"
