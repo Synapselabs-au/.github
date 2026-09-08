@@ -76,6 +76,14 @@ while true; do
     scripts/with-build-host.sh|scripts/lib/build_host.py|scripts/tests/test_build_host.py|scripts/tests/test_build_host_review.py)
       apple=1
       ;;
+    # The self-hosted Swift verification workflow. Apple-scoped because it
+    # compiles the iOS app, the Watch app, and every test target on the Mac
+    # mini, and because it calls scripts/with-xcode-lane.sh, which is already
+    # classified apple. Unlike the retired ci.yml and pr-source-policy.yml
+    # cases below, this file may be added and modified, not only deleted.
+    .github/workflows/swift-verification.yml)
+      apple=1
+      ;;
     scripts/lib/app-store-connect.sh|scripts/lib/xcode-lane.sh|scripts/lib/xcode-storage.sh|scripts/tests/app-store-connect-tests.sh|scripts/tests/release-testflight-tests.sh|scripts/tests/testflight-build-retention-tests.sh|scripts/tests/xcode-lane-tests.sh|scripts/tests/xcode-lane-security-tests.sh|scripts/tests/xcode-storage-tests.sh|scripts/tests/xcode-wrapper-lane-tests.sh|scripts/tests/verify-distribution-bundles-tests.sh|scripts/tests/health-binary-scan-tests.sh|scripts/tests/verify-user-facing-copy-tests.sh|scripts/tests/xcode-cloud-audit-tests.sh|scripts/tests/xcode-cloud-smoke-plan-tests.sh|scripts/tests/xcode-cloud-start-pr-tests.sh|scripts/tests/fixtures/app-store-connect/beta-ready.json|scripts/tests/fixtures/app-store-connect/build-invalid.json|scripts/tests/fixtures/app-store-connect/build-valid.json|scripts/tests/fixtures/app-store-connect/builds-processing.json|scripts/tests/fixtures/app-store-connect/localization-different.json|scripts/tests/fixtures/app-store-connect/localization-empty.json|scripts/tests/fixtures/app-store-connect/localization-matching.json|scripts/tests/fixtures/app-store-connect/prerelease-versions.json|scripts/tests/fixtures/xcode-cloud/*)
       apple=1
       ;;
