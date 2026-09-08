@@ -302,6 +302,20 @@ jobs:
             '
           fi
 
+          deletion_candidate=docs/release/candidates/issue-691-delete-account
+          if [[ -e "$deletion_candidate" || -L "$deletion_candidate" ]]; then
+            python3 ../.gate/scripts/verify-underbark-deletion-candidate.py
+            timeout 1m docker exec "$container" mkdir -p /workspace/deletion-candidate/source/_shared /workspace/deletion-candidate/source/delete-account
+            for file in deno.json delete-account/index.ts delete-account/handler.ts _shared/auth.ts _shared/http.ts _shared/database.ts _shared/runtime.ts; do
+              timeout 1m docker cp "$deletion_candidate/source/$file" "$container:/workspace/deletion-candidate/source/$file"
+            done
+            timeout 1m docker cp "$deletion_candidate/handler_test.ts" "$container:/workspace/deletion-candidate/handler_test.ts"
+            timeout 10m docker exec "$container" sh -euc '
+              deno check --frozen --config deletion-candidate/source/deno.json deletion-candidate/source/delete-account/index.ts deletion-candidate/handler_test.ts
+              deno test --frozen --config deletion-candidate/source/deno.json deletion-candidate/handler_test.ts
+            '
+          fi
+
           if [[ -d services/apple-notifications ]]; then
             if find services/apple-notifications -type l -print -quit | grep -q .; then
               echo "Symlinks are not allowed under services/apple-notifications." >&2

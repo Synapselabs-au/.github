@@ -256,7 +256,7 @@ expected_run_hashes = {
   "governance_claims" => "0ddd464456f46c99c4482305babc2a55292691faeae29812c962c13b948720b4",
   "classify" => "a66726736e8f36dbeb1e6179a7fa83fea000f95d11fd27a82507bdf34ac983fa",
   "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
-  "functions" => "70540c360a85f9fe5768ace078a4540097ad53ff4a81e07ef6531d9e4cb74143",
+  "functions" => "66b6beaed43a278787afa560d5d8e4cfc8b68bf0e8c2832a3984ba9c1c6c1459",
   "worker" => "a5c2577b91baa7bf7230e65ca267f1d65f3842581d79b10a10569b1b0f717d2a",
   "database" => "dcdf60915883f8607d4272b66d3e59dc04ce62e52915f666493e064077bf6d93",
   "result" => "a9bd8bf648b68eae328045d74d93d8ec69613dd1672a24bce5c104cc0842eb5a",
@@ -265,7 +265,7 @@ expected_step_hashes = {
   "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
   "classify" => "ec9d0e759eb3374d7fb8e2a686d2485992d6764acea5fa15280053269f14e244",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
-  "functions" => "de34e4fb1202e46c24988d5a70776102cf54a95fbdc4ee97574e9ae5268933fa",
+  "functions" => "5faac962150ef8db1fbbb1fe219327f4d07eef0f9af597bbcf8dc8f392849c74",
   "worker" => "e7a5a6b0cf7a2ac33daf63cf541085f9aee21ce0a0dc07c0ca5519145b65d2d9",
   "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",
   "result" => "adc8772659de234003859202abf8a40dc18ee6ca0f59c9eb59fca28c891f6373",
@@ -552,3 +552,84 @@ for invalid in missing symlink parent-symlink test-failure; do
   fi
 done
 echo "All entitlement diagnostic workflow fixtures passed."
+
+# Run the captured-source block from the workflow, with real copies and verifier.
+python3 "$repo_root/scripts/test-verify-underbark-deletion-candidate.py"
+deletion_verification="$empty_diff_scratch/deletion-verification.sh"
+ruby -ryaml - "$workflow" "$deletion_verification" <<'RUBY'
+workflow = YAML.load_file(ARGV.fetch(0))
+script = workflow.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["name"] == "Verify isolated backend functions" }.fetch("run")
+block = script[/^deletion_candidate=.*?(?=^if \[\[ -d services\/apple-notifications)/m]
+raise "Missing captured-source verification" unless block
+File.write(ARGV.fetch(1), "set -euo pipefail\n" + block)
+RUBY
+run_deletion_fixture() (
+  fixture="$empty_diff_scratch/deletion-$1"
+  mkdir -p "$fixture/.candidate" "$fixture/.gate/scripts" "$fixture/container"
+  cp "$repo_root/scripts/verify-underbark-deletion-candidate.py" "$fixture/.gate/scripts/"
+  cd "$fixture/.candidate"
+  if [[ "$1" != absent ]]; then
+    python3 - <<'PY'
+import hashlib, json
+from pathlib import Path
+root = Path('docs/release/candidates/issue-691-delete-account')
+names = ['deno.json', 'delete-account/index.ts', 'delete-account/handler.ts', '_shared/auth.ts', '_shared/http.ts', '_shared/database.ts', '_shared/runtime.ts']
+hashes = {}
+for name in names:
+    path = root / 'source' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('original fixture\n')
+    hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+(root / 'source/delete-account/handler.ts').write_text('corrected fixture\n')
+(root / 'handler_test.ts').write_text('import "./source/delete-account/handler.ts";\n')
+(root / 'observed.json').write_text(json.dumps(dict(project='a'*20, function='delete-account', version=6, verify_jwt=True, ezbr_sha256='a'*64, observed_date='2026-09-08', purpose='synthetic fixture', observed_file_sha256=hashes)))
+PY
+  fi
+  candidate=docs/release/candidates/issue-691-delete-account
+  case "$1" in
+    missing) rm "$candidate/source/_shared/auth.ts" ;;
+    symlink) rm "$candidate/handler_test.ts"; ln -s /dev/null "$candidate/handler_test.ts" ;;
+    parent-symlink) mv "$candidate/source" "$candidate/real-source"; ln -s real-source "$candidate/source" ;;
+    invalid-json) printf 'broken' > "$candidate/observed.json" ;;
+  esac
+  container=fixture
+  export fixture container
+  timeout() { shift; "$@"; }
+  deno() {
+    printf '%s\n' "$*" >> "$fixture/deno.log"
+    [[ "$*" == *--frozen* ]]
+    [[ -f deletion-candidate/source/deno.json ]]
+    grep -q 'corrected fixture' deletion-candidate/source/delete-account/handler.ts
+    grep -q './source/delete-account/handler.ts' deletion-candidate/handler_test.ts
+    [[ "$1" != test || "$fixture" != *test-failure ]]
+  }
+  docker() {
+    printf '%s\n' "$*" >> "$fixture/docker.log"
+    if [[ "$1" == cp ]]; then
+      target="${3#fixture:/workspace/}"
+      cp "$2" "$fixture/container/$target"
+    elif [[ "$3" == mkdir ]]; then
+      shift 4
+      for path in "$@"; do mkdir -p "$fixture/container/${path#/workspace/}"; done
+    elif [[ "$3" == sh ]]; then
+      (cd "$fixture/container"; bash -euc "$5")
+    else
+      return 1
+    fi
+  }
+  export -f timeout docker deno
+  bash "$deletion_verification"
+)
+run_deletion_fixture absent
+[[ ! -e "$empty_diff_scratch/deletion-absent/docker.log" ]]
+run_deletion_fixture valid
+[[ "$(grep -c '^cp ' "$empty_diff_scratch/deletion-valid/docker.log")" == 8 ]]
+grep -q '^check --frozen ' "$empty_diff_scratch/deletion-valid/deno.log"
+grep -q '^test --frozen ' "$empty_diff_scratch/deletion-valid/deno.log"
+for invalid in missing symlink parent-symlink invalid-json test-failure; do
+  if run_deletion_fixture "$invalid"; then
+    echo "Captured-source fixture incorrectly passed: $invalid" >&2
+    exit 1
+  fi
+done
+echo "All captured-source workflow fixtures passed."

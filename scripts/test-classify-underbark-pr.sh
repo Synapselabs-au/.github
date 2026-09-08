@@ -161,6 +161,13 @@ expect_classification $'backend\t1\t0' "complete entitlement diagnostic" \
   A scripts/load/ENTITLEMENT_TIMING.md
 expect_classification $'blocked\t0\t0' "nested diagnostic remains blocked" A scripts/load/nested/entitlement-timing.ts
 
+candidate=docs/release/candidates/issue-691-delete-account
+for candidate_file in handler_test.ts observed.json source/deno.json source/delete-account/index.ts source/delete-account/handler.ts source/_shared/auth.ts source/_shared/http.ts source/_shared/database.ts source/_shared/runtime.ts; do
+  expect_classification $'backend\t1\t0' "exact captured candidate $candidate_file" A "$candidate/$candidate_file"
+  expect_classification $'blocked\t0\t0' "unknown candidate sibling $candidate_file" A "$candidate/$candidate_file.extra"
+done
+expect_classification $'blocked\t0\t0' "unknown nested candidate source" A "$candidate/source/nested/handler.ts"
+
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
