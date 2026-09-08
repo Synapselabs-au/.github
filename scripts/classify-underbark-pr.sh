@@ -68,6 +68,9 @@ while true; do
     scripts/load/entitlement-timing.ts|scripts/tests/entitlement-timing-tests.ts)
       backend_functions=1
       ;;
+    docs/release/candidates/issue-691-delete-account/handler_test.ts|docs/release/candidates/issue-691-delete-account/observed.json|docs/release/candidates/issue-691-delete-account/source/deno.json|docs/release/candidates/issue-691-delete-account/source/delete-account/index.ts|docs/release/candidates/issue-691-delete-account/source/delete-account/handler.ts|docs/release/candidates/issue-691-delete-account/source/_shared/auth.ts|docs/release/candidates/issue-691-delete-account/source/_shared/http.ts|docs/release/candidates/issue-691-delete-account/source/_shared/database.ts|docs/release/candidates/issue-691-delete-account/source/_shared/runtime.ts)
+      backend_functions=1
+      ;;
     scripts/load/underbark-launch-load.ts|scripts/load/underbark-load-core.ts|scripts/load/underbark-provider-metrics.ts|scripts/tests/underbark-auth-provider-posture-tests.ts|scripts/tests/underbark-load-core-tests.ts|scripts/tests/underbark-provider-metrics-tests.ts|scripts/verify-supabase-auth-provider-posture.ts)
       backend_functions=1
       backend_database=1
