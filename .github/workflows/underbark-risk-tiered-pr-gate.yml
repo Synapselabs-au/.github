@@ -103,7 +103,8 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --repo-dir .candidate \
             --base-sha "$EVENT_BASE_SHA" \
-            --head-sha "$EVENT_HEAD"
+            --head-sha "$EVENT_HEAD" \
+            --pull-request "$PR_NUMBER"
           python3 .gate/scripts/verify-underbark-supabase-config.py \
             .candidate/supabase/config.toml
 
@@ -211,7 +212,8 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --repo-dir .candidate \
             --base-sha "$EVENT_BASE_SHA" \
-            --head-sha "$EVENT_HEAD"
+            --head-sha "$EVENT_HEAD" \
+            --pull-request "$PR_NUMBER"
 
           require_same_pr
           echo "Website pull request head and trusted agent context verified."
