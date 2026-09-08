@@ -230,6 +230,14 @@ expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/tests/xcode-lane-security-tests.sh \
   A scripts/tests/xcode-wrapper-lane-tests.sh \
   A scripts/verify-governance.sh
+expect_classification $'apple\t0\t0' "continuity and claims governance verifiers" \
+  A scripts/verify-claims-register.sh \
+  A scripts/verify-continuity-protocol-parity.sh \
+  A scripts/tests/continuity-protocol-parity-tests.sh
+# The allowlist is exact. A sibling that merely looks like one of the three
+# above must still be refused, or the case would be a prefix rule in disguise.
+expect_classification $'blocked\t0\t0' "unapproved continuity verifier sibling" \
+  A scripts/verify-continuity-protocol-parity-extra.sh
 expect_classification $'apple\t0\t0' "Health binary scan fixture" A scripts/tests/health-binary-scan-tests.sh
 expect_classification $'blocked\t0\t0' "unapproved Health scan fixture sibling" A scripts/tests/health-binary-scan-tests.sh.extra
 expect_classification $'apple\t0\t0' "distribution verifier test suite" \
