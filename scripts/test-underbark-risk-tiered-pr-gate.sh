@@ -3,9 +3,41 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workflow="${1:-$repo_root/.github/workflows/underbark-risk-tiered-pr-gate.yml}"
+classifier="$repo_root/scripts/classify-underbark-pr.sh"
 
 [[ -f "$workflow" ]] || {
   echo "Missing workflow: $workflow" >&2
+  exit 1
+}
+
+empty_diff_scratch="$(mktemp -d)"
+trap 'rm -rf "$empty_diff_scratch"' EXIT
+git -C "$empty_diff_scratch" init -q
+git -C "$empty_diff_scratch" config user.name "Underbark Gate Test"
+git -C "$empty_diff_scratch" config user.email "gate-test@invalid.example"
+printf 'base\n' >"$empty_diff_scratch/tracked.txt"
+git -C "$empty_diff_scratch" add tracked.txt
+git -C "$empty_diff_scratch" commit -q -m "base"
+empty_diff_base="$(git -C "$empty_diff_scratch" rev-parse HEAD)"
+git -C "$empty_diff_scratch" commit -q --allow-empty -m "linear empty commit"
+empty_diff_head="$(git -C "$empty_diff_scratch" rev-parse HEAD)"
+
+[[ "$empty_diff_base" != "$empty_diff_head" ]] || {
+  echo "Linear empty-diff fixture did not create two commits." >&2
+  exit 1
+}
+[[ "$(git -C "$empty_diff_scratch" rev-parse "${empty_diff_base}^{tree}")" \
+  == "$(git -C "$empty_diff_scratch" rev-parse "${empty_diff_head}^{tree}")" ]] || {
+  echo "Linear empty-diff fixture trees differ." >&2
+  exit 1
+}
+empty_diff_classification="$(
+  git -C "$empty_diff_scratch" diff --name-status --no-renames -z \
+    "$empty_diff_base...$empty_diff_head" \
+    | "$classifier"
+)"
+[[ "$empty_diff_classification" == $'blocked\t0\t0' ]] || {
+  echo "Linear empty diff did not fail closed: $empty_diff_classification" >&2
   exit 1
 }
 
@@ -123,7 +155,7 @@ raise "token-bearing job boundary changed" unless token_jobs == %w[classify webs
 
 expected_run_hashes = {
   "governance_claims" => "0ddd464456f46c99c4482305babc2a55292691faeae29812c962c13b948720b4",
-  "classify" => "ee99ece901f1755a5670bec1bcc1f0aab628a694a05aa0f084e3632f76cc08ae",
+  "classify" => "a66726736e8f36dbeb1e6179a7fa83fea000f95d11fd27a82507bdf34ac983fa",
   "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
   "functions" => "14f5eae882276c3856d45274037e3c79536b58aae8c555c65c755623c95450e0",
   "database" => "dcdf60915883f8607d4272b66d3e59dc04ce62e52915f666493e064077bf6d93",
@@ -131,7 +163,7 @@ expected_run_hashes = {
 }
 expected_step_hashes = {
   "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
-  "classify" => "fa3a108d53901bbd5d313800061cb00b40ae61045443280615655fa1b3f4ff12",
+  "classify" => "ec9d0e759eb3374d7fb8e2a686d2485992d6764acea5fa15280053269f14e244",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
   "functions" => "d4125cccc2ad8062e432b6d82d335f0b55149b48afd016124858c4ff23dac347",
   "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",
@@ -177,6 +209,7 @@ raise "agent-context approval runs after Supabase verification" unless
 raise "agent-context approval runs after classification" unless
   approval_index < classify.index("classify-underbark-pr.sh")
 raise "trusted path classifier missing" unless classify.include?("classify-underbark-pr.sh")
+raise "ordinary empty diff bypasses the classifier" if classify.include?("diff --quiet") || classify.match?(/classification\s*=\s*["']static["']/)
 raise "Supabase config verifier missing" unless classify.include?("verify-underbark-supabase-config.py")
 raise "head race guard missing" unless classify.include?("require_same_pr")
 raise "dev target guard missing" unless classify.include?('EVENT_BASE_REF" != "dev')
