@@ -309,6 +309,13 @@
         "docs/USER_FACING_COPY_POLICY.md"
       ],
       "repository": "Synapselabs-au/Underbark-Web"
+    },
+    {
+      "head_sha": "378f068d8ae605718d53d5c4fc6b0a03cc5e806c",
+      "protected_paths": [
+        "docs/USER_FACING_CLAIM_HANDOFF.md"
+      ],
+      "repository": "Synapselabs-au/Underbark-Web"
     }
   ]
 }
