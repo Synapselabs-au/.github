@@ -265,7 +265,7 @@ expected_step_hashes = {
   "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
   "classify" => "ec9d0e759eb3374d7fb8e2a686d2485992d6764acea5fa15280053269f14e244",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
-  "functions" => "5faac962150ef8db1fbbb1fe219327f4d07eef0f9af597bbcf8dc8f392849c74",
+  "functions" => "b8cc3b6dce8d15d372e417130b8b53489ee29e10be2ef560fca0f9dc2beae5c5",
   "worker" => "e7a5a6b0cf7a2ac33daf63cf541085f9aee21ce0a0dc07c0ca5519145b65d2d9",
   "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",
   "result" => "adc8772659de234003859202abf8a40dc18ee6ca0f59c9eb59fca28c891f6373",
@@ -350,8 +350,9 @@ raise "website context job executes candidate scripts" if website_context.includ
 
 functions_job = jobs.fetch("functions")
 functions_steps = functions_job.fetch("steps")
-raise "functions job must check out, set up Node, and verify" unless functions_steps.length == 3
-setup_node = functions_steps.fetch(1)
+raise "functions job must check out, set up Node, and verify" unless functions_steps.length == 4
+raise "functions trusted checkout differs from classifier" unless functions_steps.fetch(1) == jobs.fetch("classify").fetch("steps").fetch(0)
+setup_node = functions_steps.fetch(2)
 raise "Node setup action changed" unless
   setup_node.fetch("uses") == "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
 raise "Node setup version changed" unless setup_node.fetch("with") == {"node-version" => "24"}

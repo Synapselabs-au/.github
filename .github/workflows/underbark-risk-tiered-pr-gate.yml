@@ -233,6 +233,14 @@ jobs:
           path: .candidate
           persist-credentials: false
 
+      - name: Check out trusted gate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: Synapselabs-au/.github
+          ref: ${{ github.workflow_sha }}
+          path: .gate
+          persist-credentials: false
+
       - name: Set up Node 24
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
