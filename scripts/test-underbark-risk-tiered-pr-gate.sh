@@ -10,7 +10,7 @@ classifier="$repo_root/scripts/classify-underbark-pr.sh"
   exit 1
 }
 
-empty_diff_scratch="$(mktemp -d)"
+empty_diff_scratch="$(mktemp -d "${TMPDIR:-/tmp}/underbark-diff-gate-tests.XXXXXX")"
 trap 'rm -rf "$empty_diff_scratch"' EXIT
 git -C "$empty_diff_scratch" init -q
 git -C "$empty_diff_scratch" config user.name "Underbark Gate Test"
@@ -157,7 +157,7 @@ expected_run_hashes = {
   "governance_claims" => "0ddd464456f46c99c4482305babc2a55292691faeae29812c962c13b948720b4",
   "classify" => "a66726736e8f36dbeb1e6179a7fa83fea000f95d11fd27a82507bdf34ac983fa",
   "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
-  "functions" => "14f5eae882276c3856d45274037e3c79536b58aae8c555c65c755623c95450e0",
+  "functions" => "70540c360a85f9fe5768ace078a4540097ad53ff4a81e07ef6531d9e4cb74143",
   "database" => "dcdf60915883f8607d4272b66d3e59dc04ce62e52915f666493e064077bf6d93",
   "result" => "74ddc71787346c4596a98626fdf715ac13b41f4a949c1a5a5c84090ff18b8afe",
 }
@@ -165,7 +165,7 @@ expected_step_hashes = {
   "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
   "classify" => "ec9d0e759eb3374d7fb8e2a686d2485992d6764acea5fa15280053269f14e244",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
-  "functions" => "d4125cccc2ad8062e432b6d82d335f0b55149b48afd016124858c4ff23dac347",
+  "functions" => "de34e4fb1202e46c24988d5a70776102cf54a95fbdc4ee97574e9ae5268933fa",
   "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",
   "result" => "dc605f0653c15682675729a53c64c155eb366bfd4e894cd4089991a7264eee5c",
 }
@@ -324,7 +324,7 @@ cleanup_fixture_root() {
       ;;
   esac
 }
-trap cleanup_fixture_root EXIT
+trap 'cleanup_fixture_root; rm -rf -- "$empty_diff_scratch"' EXIT
 
 node_verification="$fixture_root/node-verification.sh"
 ruby -ryaml - "$workflow" "$node_verification" <<'RUBY'
@@ -385,3 +385,56 @@ if [[ "$fixture_failures" -ne 0 ]]; then
 fi
 
 echo "UNDERBARK_NODE_ADVERSARIAL_FIXTURES_OK"
+
+# Execute the diagnostic selection from the actual workflow with a container-boundary stub.
+diagnostic_verification="$empty_diff_scratch/diagnostic-verification.sh"
+ruby -ryaml - "$workflow" "$diagnostic_verification" <<'RUBY'
+workflow = YAML.load_file(ARGV.fetch(0))
+script = workflow.fetch("jobs").fetch("functions").fetch("steps").find { |step| step["name"] == "Verify isolated backend functions" }.fetch("run")
+block = script[/^if \[\[ -e scripts\/load\/entitlement-timing\.ts.*?(?=^if \[\[ -d services\/apple-notifications)/m]
+raise "Missing executable entitlement diagnostic verification" unless block
+File.write(ARGV.fetch(1), "set -euo pipefail\n" + block)
+RUBY
+run_diagnostic_fixture() (
+  fixture="$empty_diff_scratch/diagnostic-$1"
+  mkdir -p "$fixture/scripts/load" "$fixture/scripts/tests"
+  cd "$fixture"
+  case "$1" in
+    absent) ;;
+    missing) touch scripts/load/entitlement-timing.ts ;;
+    symlink) touch scripts/tests/entitlement-timing-tests.ts; ln -s /dev/null scripts/load/entitlement-timing.ts ;;
+    parent-symlink) mv scripts/load real-load; ln -s ../real-load scripts/load; touch real-load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts ;;
+    *) touch scripts/load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts ;;
+  esac
+  container=fixture
+  export container
+  timeout() { shift; "$@"; }
+  deno() {
+    printf '%s\n' "$*" >> "$fixture/deno.log"
+    [[ "$1" != test || "$fixture" != *test-failure ]]
+  }
+  docker() {
+    printf '%s\n' "$*" >> "$fixture/docker.log"
+    if [[ "$1" == exec && "$3" == sh ]]; then
+      bash -euc "$5"
+    fi
+  }
+  export fixture
+  export -f timeout docker deno
+  bash "$diagnostic_verification"
+)
+run_diagnostic_fixture absent
+[[ ! -e "$empty_diff_scratch/diagnostic-absent/docker.log" ]]
+run_diagnostic_fixture valid
+for operation in fmt check test; do
+  grep -q "^$operation " "$empty_diff_scratch/diagnostic-valid/deno.log"
+done
+grep -q '^test --frozen --config supabase/functions/deno.json scripts/tests/entitlement-timing-tests.ts$' "$empty_diff_scratch/diagnostic-valid/deno.log"
+[[ "$(grep -c '^cp ' "$empty_diff_scratch/diagnostic-valid/docker.log")" == 2 ]]
+for invalid in missing symlink parent-symlink test-failure; do
+  if run_diagnostic_fixture "$invalid"; then
+    echo "Diagnostic fixture incorrectly passed: $invalid" >&2
+    exit 1
+  fi
+done
+echo "All entitlement diagnostic workflow fixtures passed."

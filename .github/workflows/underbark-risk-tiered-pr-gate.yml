@@ -281,6 +281,27 @@ jobs:
             xargs -0 deno test --frozen --config supabase/functions/deno.json < /tmp/underbark-deno-test-files
           '
 
+          if [[ -e scripts/load/entitlement-timing.ts || -L scripts/load/entitlement-timing.ts || -e scripts/tests/entitlement-timing-tests.ts || -L scripts/tests/entitlement-timing-tests.ts ]]; then
+            for path in scripts scripts/load scripts/tests scripts/load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts; do
+              if [[ -L "$path" ]]; then
+                echo "Symlinks are not allowed in entitlement diagnostic paths." >&2
+                exit 1
+              fi
+            done
+            if [[ ! -f scripts/load/entitlement-timing.ts || ! -f scripts/tests/entitlement-timing-tests.ts ]]; then
+              echo "The entitlement diagnostic and its tests must both be present." >&2
+              exit 1
+            fi
+            timeout 1m docker exec "$container" mkdir -p /workspace/scripts/load /workspace/scripts/tests
+            timeout 1m docker cp scripts/load/entitlement-timing.ts "$container:/workspace/scripts/load/entitlement-timing.ts"
+            timeout 1m docker cp scripts/tests/entitlement-timing-tests.ts "$container:/workspace/scripts/tests/entitlement-timing-tests.ts"
+            timeout 10m docker exec "$container" sh -euc '
+              deno fmt --check --config supabase/functions/deno.json scripts/load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts
+              deno check --frozen --config supabase/functions/deno.json scripts/load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts
+              deno test --frozen --config supabase/functions/deno.json scripts/tests/entitlement-timing-tests.ts
+            '
+          fi
+
           if [[ -d services/apple-notifications ]]; then
             if find services/apple-notifications -type l -print -quit | grep -q .; then
               echo "Symlinks are not allowed under services/apple-notifications." >&2

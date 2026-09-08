@@ -144,6 +144,16 @@ for mini_path in scripts/with-build-host.sh scripts/lib/build_host.py scripts/te
   expect_classification $'blocked\t0\t0' "unapproved mini routing sibling ${mini_path}" A "${mini_path}.extra"
 done
 
+for diagnostic_path in scripts/load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts; do
+  expect_classification $'backend\t1\t0' "exact entitlement diagnostic ${diagnostic_path}" A "$diagnostic_path"
+  expect_classification $'blocked\t0\t0' "unknown diagnostic sibling ${diagnostic_path}" A "${diagnostic_path}.extra"
+done
+expect_classification $'backend\t1\t0' "complete entitlement diagnostic" \
+  A scripts/load/entitlement-timing.ts \
+  A scripts/tests/entitlement-timing-tests.ts \
+  A scripts/load/ENTITLEMENT_TIMING.md
+expect_classification $'blocked\t0\t0' "nested diagnostic remains blocked" A scripts/load/nested/entitlement-timing.ts
+
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
