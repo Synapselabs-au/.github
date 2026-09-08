@@ -69,6 +69,8 @@ while IFS= read -r -d '' status; do
       ;;
     docs/brand/fonts/BricolageGrotesque-OFL.txt|docs/brand/fonts/HankenGrotesk-OFL.txt|docs/brand/fonts/SpaceMono-OFL.txt)
       ;;
+    scripts/anonymise-export.py)
+      ;;
     .gitattributes|.gitignore|*.md|.github/pull_request_template.md|.github/ISSUE_TEMPLATE/*)
       ;;
     .github/workflows/ci.yml|.github/workflows/pr-source-policy.yml|scripts/classify-ci-changes.sh|scripts/verify-ci-classifier.sh|scripts/verify-ci-workflow.sh)

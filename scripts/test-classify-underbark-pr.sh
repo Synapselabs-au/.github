@@ -39,6 +39,8 @@ expect_classification $'static\t0\t0' "Hanken Grotesk license record" \
   M docs/brand/fonts/HankenGrotesk-OFL.txt
 expect_classification $'static\t0\t0' "Space Mono license record" \
   M docs/brand/fonts/SpaceMono-OFL.txt
+expect_classification $'static\t0\t0' "tester sample data script" \
+  A scripts/anonymise-export.py
 expect_classification $'static\t0\t0' "legacy workflow deletion" \
   D .github/workflows/ci.yml \
   D .github/workflows/pr-source-policy.yml
