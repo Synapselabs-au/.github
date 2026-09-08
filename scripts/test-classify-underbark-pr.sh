@@ -92,6 +92,8 @@ expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/tests/xcode-lane-security-tests.sh \
   A scripts/tests/xcode-wrapper-lane-tests.sh \
   A scripts/verify-governance.sh
+expect_classification $'apple\t0\t0' "Health binary scan fixture" A scripts/tests/health-binary-scan-tests.sh
+expect_classification $'blocked\t0\t0' "unapproved Health scan fixture sibling" A scripts/tests/health-binary-scan-tests.sh.extra
 expect_classification $'apple\t0\t0' "distribution verifier test suite" \
   M scripts/tests/verify-distribution-bundles-tests.sh
 expect_classification $'apple\t0\t0' "Xcode Cloud policy audit tooling" \
