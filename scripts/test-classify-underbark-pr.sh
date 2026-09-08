@@ -144,6 +144,34 @@ for mini_path in scripts/with-build-host.sh scripts/lib/build_host.py scripts/te
   expect_classification $'blocked\t0\t0' "unapproved mini routing sibling ${mini_path}" A "${mini_path}.extra"
 done
 
+export_coverage_paths=(
+  docs/data/EXPORT_COVERAGE.json
+  scripts/verify-export-coverage.py
+  scripts/tests/test_export_coverage.py
+)
+for export_status in A M D; do
+  export_coverage_records=()
+  for export_path in "${export_coverage_paths[@]}"; do
+    expect_classification $'apple\t0\t0' \
+      "export coverage ${export_status} ${export_path}" "$export_status" "$export_path"
+    export_coverage_records+=("$export_status" "$export_path")
+    expect_classification $'blocked\t0\t0' \
+      "export coverage suffix ${export_status} ${export_path}" "$export_status" "${export_path}.extra"
+    expect_classification $'blocked\t0\t0' \
+      "export coverage nested ${export_status} ${export_path}" \
+      "$export_status" "${export_path%/*}/nested/${export_path##*/}"
+  done
+  expect_classification $'apple\t0\t0' \
+    "complete export coverage ${export_status}" "${export_coverage_records[@]}"
+done
+expect_classification $'blocked\t0\t0' "unknown export coverage sibling" \
+  A docs/data/OTHER_COVERAGE.json
+expect_classification $'blocked\t0\t0' "export coverage cannot hide unknown script" \
+  A docs/data/EXPORT_COVERAGE.json \
+  A scripts/verify-export-coverage.py \
+  A scripts/tests/test_export_coverage.py \
+  A scripts/verify-other-export.py
+
 for diagnostic_path in scripts/load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts; do
   expect_classification $'backend\t1\t0' "exact entitlement diagnostic ${diagnostic_path}" A "$diagnostic_path"
   expect_classification $'blocked\t0\t0' "unknown diagnostic sibling ${diagnostic_path}" A "${diagnostic_path}.extra"
