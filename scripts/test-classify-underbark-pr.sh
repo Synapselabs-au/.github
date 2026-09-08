@@ -5,6 +5,24 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 classifier="${script_dir}/classify-underbark-pr.sh"
 failures=0
 
+# Asserts the diagnostic the classifier writes to stderr. The stdout record is
+# a fixed contract the gate parses, so a refusal reason can only travel on
+# stderr, and without a fixture it can regress silently.
+expect_reason() {
+  expected="$1"
+  description="$2"
+  shift 2
+
+  set +e
+  actual="$(printf '%s\0' "$@" | "$classifier" 2>&1 >/dev/null)"
+  set -e
+
+  if [ "$actual" != "$expected" ]; then
+    echo "FAIL: ${description}: expected stderr ${expected:-<empty>}, got ${actual:-<empty>}" >&2
+    failures=$((failures + 1))
+  fi
+}
+
 expect_classification() {
   expected="$1"
   description="$2"
@@ -334,5 +352,17 @@ if [ "$failures" -ne 0 ]; then
   echo "${failures} classifier fixture(s) failed." >&2
   exit 1
 fi
+
+expect_reason $'UNCLASSIFIED_PATH\tsome/unknown/path.txt' \
+  "an unclassified path is named on stderr" \
+  A some/unknown/path.txt
+expect_reason $'RETIRED_PATH_NOT_DELETED\tM\t.github/workflows/ci.yml' \
+  "a retired workflow modified rather than deleted is named" \
+  M .github/workflows/ci.yml
+expect_reason $'UNSAFE_PATH_SHAPE\t../escape.txt' \
+  "a refused path shape is named" \
+  A ../escape.txt
+expect_reason '' "a fully classified diff explains nothing" \
+  M Recovr/AppModel.swift
 
 echo "All Underbark classifier fixtures passed."
