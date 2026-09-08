@@ -50,6 +50,9 @@ while true; do
     docs/release/app-store-localizations/en-AU.json|docs/release/app-store-localizations/en-GB.json|docs/release/app-store-localizations/en-US.json)
       apple=1
       ;;
+    services/apple-notifications/*)
+      backend_functions=1
+      ;;
     supabase/functions/*)
       backend_functions=1
       ;;
@@ -60,17 +63,20 @@ while true; do
     supabase/migrations/*|supabase/tests/*|supabase/seed.sql|supabase/schemas/*)
       backend_database=1
       ;;
-    scripts/load/underbark-launch-load.ts|scripts/load/underbark-load-core.ts|scripts/tests/underbark-load-core-tests.ts)
+    scripts/load/underbark-launch-load.ts|scripts/load/underbark-load-core.ts|scripts/load/underbark-provider-metrics.ts|scripts/tests/underbark-auth-provider-posture-tests.ts|scripts/tests/underbark-load-core-tests.ts|scripts/tests/underbark-provider-metrics-tests.ts|scripts/verify-supabase-auth-provider-posture.ts)
       backend_functions=1
       backend_database=1
       ;;
-    scripts/archive-app.sh|scripts/release-testflight.sh|scripts/testflight-build-retention.sh|scripts/render-brand-assets.sh|scripts/verify-archive.sh|scripts/verify-brand.sh|scripts/verify-distribution-bundles.sh|scripts/verify-governance.sh|scripts/verify-ipa.sh|scripts/verify-pr-source-policy-tests.sh|scripts/verify-pr-source-policy.sh|scripts/verify-release-record.sh|scripts/verify-signing.sh|scripts/verify-storekit-catalogue.sh|scripts/verify-user-facing-copy.sh|scripts/verify-version-change-policy-tests.sh|scripts/verify-version-change-policy.sh|scripts/verify-version.sh|scripts/verify-xcode-cloud-config.sh|scripts/verify-xcode-cloud-prebuild-tests.sh|scripts/version.sh|scripts/with-xcode-lane.sh|scripts/xcode-cloud-audit.sh|scripts/xcode-cloud-start-pr.sh|scripts/xcode-lane-status.sh)
+    scripts/archive-app.sh|scripts/release-testflight.sh|scripts/testflight-build-retention.sh|scripts/render-brand-assets.sh|scripts/verify-archive.sh|scripts/verify-brand.sh|scripts/verify-distribution-bundles.sh|scripts/verify-governance.sh|scripts/verify-ipa.sh|scripts/verify-pr-source-policy-tests.sh|scripts/verify-pr-source-policy.sh|scripts/verify-release-record.sh|scripts/verify-signing.sh|scripts/verify-storekit-catalogue.sh|scripts/verify-user-facing-copy.sh|scripts/verify-version-change-policy-tests.sh|scripts/verify-version-change-policy.sh|scripts/verify-version.sh|scripts/verify-xcode-cloud-config.sh|scripts/verify-xcode-cloud-prebuild-tests.sh|scripts/verify-xcode-cloud-source-policy-tests.sh|scripts/verify-xcode-cloud-source-policy.sh|scripts/version.sh|scripts/with-xcode-lane.sh|scripts/xcode-cloud-audit.sh|scripts/xcode-cloud-start-pr.sh|scripts/xcode-lane-status.sh)
       apple=1
       ;;
     scripts/sync-english-localizations.py|scripts/tests/test_localization_project_config.py|scripts/tests/test_sync_english_localizations.py|scripts/tests/test_task5_iphone_localization.py|scripts/tests/test_task6_watch_widget_localization.py|scripts/tests/test_verify_app_store_localizations.py|scripts/tests/test_verify_localizations.py|scripts/tests/verify-storekit-catalogue-tests.sh|scripts/verify-app-store-localizations.py|scripts/verify-localizations.py|scripts/xcstrings_schema.py)
       apple=1
       ;;
-    scripts/lib/app-store-connect.sh|scripts/lib/xcode-lane.sh|scripts/tests/app-store-connect-tests.sh|scripts/tests/release-testflight-tests.sh|scripts/tests/testflight-build-retention-tests.sh|scripts/tests/xcode-lane-tests.sh|scripts/tests/xcode-lane-security-tests.sh|scripts/tests/xcode-wrapper-lane-tests.sh|scripts/tests/verify-distribution-bundles-tests.sh|scripts/tests/verify-user-facing-copy-tests.sh|scripts/tests/xcode-cloud-audit-tests.sh|scripts/tests/xcode-cloud-smoke-plan-tests.sh|scripts/tests/xcode-cloud-start-pr-tests.sh|scripts/tests/fixtures/app-store-connect/beta-ready.json|scripts/tests/fixtures/app-store-connect/build-invalid.json|scripts/tests/fixtures/app-store-connect/build-valid.json|scripts/tests/fixtures/app-store-connect/builds-processing.json|scripts/tests/fixtures/app-store-connect/localization-different.json|scripts/tests/fixtures/app-store-connect/localization-empty.json|scripts/tests/fixtures/app-store-connect/localization-matching.json|scripts/tests/fixtures/app-store-connect/prerelease-versions.json|scripts/tests/fixtures/xcode-cloud/*)
+    scripts/with-build-host.sh|scripts/lib/build_host.py|scripts/tests/test_build_host.py|scripts/tests/test_build_host_review.py)
+      apple=1
+      ;;
+    scripts/lib/app-store-connect.sh|scripts/lib/xcode-lane.sh|scripts/lib/xcode-storage.sh|scripts/tests/app-store-connect-tests.sh|scripts/tests/release-testflight-tests.sh|scripts/tests/testflight-build-retention-tests.sh|scripts/tests/xcode-lane-tests.sh|scripts/tests/xcode-lane-security-tests.sh|scripts/tests/xcode-storage-tests.sh|scripts/tests/xcode-wrapper-lane-tests.sh|scripts/tests/verify-distribution-bundles-tests.sh|scripts/tests/health-binary-scan-tests.sh|scripts/tests/verify-user-facing-copy-tests.sh|scripts/tests/xcode-cloud-audit-tests.sh|scripts/tests/xcode-cloud-smoke-plan-tests.sh|scripts/tests/xcode-cloud-start-pr-tests.sh|scripts/tests/fixtures/app-store-connect/beta-ready.json|scripts/tests/fixtures/app-store-connect/build-invalid.json|scripts/tests/fixtures/app-store-connect/build-valid.json|scripts/tests/fixtures/app-store-connect/builds-processing.json|scripts/tests/fixtures/app-store-connect/localization-different.json|scripts/tests/fixtures/app-store-connect/localization-empty.json|scripts/tests/fixtures/app-store-connect/localization-matching.json|scripts/tests/fixtures/app-store-connect/prerelease-versions.json|scripts/tests/fixtures/xcode-cloud/*)
       apple=1
       ;;
     .github/repo-integrity-policy.json|.github/workflows/repo-integrity-sentinel.yml|scripts/repo_integrity_audit.py|scripts/repo_integrity/__init__.py|scripts/repo_integrity/core.py|scripts/repo_integrity/deterministic.py|scripts/repo_integrity/github_checks.py|scripts/repo_integrity/issues.py|scripts/repo_integrity/reporting.py|scripts/repo_integrity/runner.py|scripts/repo_integrity/semantic.py|scripts/tests/test_repo_integrity_audit.py)

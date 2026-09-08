@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "approvals": [
+    {
+      "head_sha": "4b54a6faf25197ba5fbddb81b84eb0e03d12ff6f",
+      "protected_paths": [
+        "AGENTS.md",
+        "docs/ENGINEERING_POLICY.md",
+        "docs/RELEASING.md",
+        "docs/TRUSTED_VERIFICATION.md",
+        "docs/USER_FACING_COPY_POLICY.md",
+        "docs/XCODE_CLOUD.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "6b0f998fef8a18a585af9055b93a8db872f9be9e",
+      "protected_paths": [
+        "AGENTS.md",
+        "docs/USER_FACING_COPY_POLICY.md"
+      ],
+      "repository": "Synapselabs-au/Underbark-Web"
+    },
+    {
+      "head_sha": "f3b5e982ed66d02a4772150bffa5cc4119ef130a",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "86dcedac859280903b49a10b3bd9b1b1a7db2683",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "9fae4c60a9ba8bb021198ca0094428b51f63a2be",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "18057128d4c7dc1ec7f45311f8324d733988a851",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "8ff68f585c6b35f4133a14dd28bf1face5c9f781",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "7872f5a5f28f7e92e776c5d306ea69ef39a69793",
+      "protected_paths": [
+        ".github/repo-integrity-policy.json",
+        "docs/XCODE_CLOUD.md",
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "67efce88f73f232df8570ad3d3b4492d9592fea6",
+      "protected_paths": [
+        ".github/repo-integrity-policy.json",
+        "docs/XCODE_CLOUD.md",
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "8c2cf9425566e8f17da4a2da340ebb779f19678b",
+      "protected_paths": [
+        ".github/repo-integrity-policy.json",
+        "docs/XCODE_CLOUD.md",
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "059c045db11c394e7e974271ef6a61cdf2fd94e7",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "bd454d7cb71c02586be2a849927f8f60c675e894",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "4f1072a8a8d24742ce3832a9afd0f1575222cd6d",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "f8a3abf8a970098432a25e0c8b9e802f2ce2776c",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "7fa60a3ca8c91693047da079c431425bb09a73b5",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "6e53ef0a35e0c4ee37fee84a6aed6acf2a104bce",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "a4459d2b4d67f20d0c3b2ed609743a262ac73314",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "e761e5d4fb1c12eb3ce5f255d9085c2f28137154",
+      "protected_paths": [
+        "scripts/repo_integrity/github_checks.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "9515005b10f889c18863be310dfe7abab9577d9d",
+      "protected_paths": [
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "scripts/repo_integrity/runner.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "a791c9c147174f6dc4038c9071f3f32aa47a2433",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "1edd867d8375269518c745eae8367fe1d0f4a4da",
+      "protected_paths": [
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "scripts/repo_integrity/runner.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "833a1e4d5adf637d2bea924dfc634d7d98b9a54d",
+      "protected_paths": [
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "scripts/repo_integrity/runner.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "f9e4c00fd3c7a8556b7cafeeda3f5c6d3942343e",
+      "protected_paths": [
+        ".github/workflows/repo-integrity-sentinel.yml",
+        "scripts/repo_integrity/runner.py",
+        "scripts/tests/test_repo_integrity_audit.py"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "3ffeb8d313477e25793262bb44b659791c285be0",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "901ad4ae90e16a26dcadab7d63453b304e7c6be1",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "6e725747cf64f10c392512363a51910143e2bfd2",
+      "protected_paths": [
+        "AGENTS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "5f563586985fb46c809e2aab58ac7b36b28c139e",
+      "protected_paths": [
+        "AGENTS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "52a265921c46cfa96b161787be7aebc88e2a69b3",
+      "protected_paths": [
+        "AGENTS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "7b0a9d5ce329d41d96cbd00878945374d63e792a",
+      "protected_paths": [
+        "AGENTS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "ab4fc42dc8518717c5c244054c72a05f647797e0",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    }
+  ]
+}

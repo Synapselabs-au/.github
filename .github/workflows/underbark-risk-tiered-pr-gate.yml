@@ -10,9 +10,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  governance_claims:
+    name: Verify governance claims register
+    if: ${{ github.repository == 'Synapselabs-au/Underbark' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out candidate without persisted credentials
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .candidate
+          persist-credentials: false
+
+      # This candidate-owned check runs on a separate runner. It cannot modify
+      # the trusted gate checkout or classifier workspace.
+      - name: Governance claims register
+        run: |
+          if [ -f .candidate/scripts/verify-claims-register.sh ]; then
+            bash .candidate/scripts/verify-claims-register.sh
+          else
+            echo "verify-claims-register.sh absent: head predates ecec8574; no check to run"
+          fi
+
   classify:
     name: Classify trusted verification
-    if: ${{ github.repository == 'Synapselabs-au/Underbark' }}
+    needs: governance_claims
+    if: ${{ github.repository == 'Synapselabs-au/Underbark' && needs.governance_claims.result == 'success' }}
     permissions:
       contents: read
       pull-requests: read
@@ -72,6 +99,11 @@ jobs:
           git -C .candidate cat-file -e "${EVENT_BASE_SHA}^{commit}"
           git -C .candidate cat-file -e "${EVENT_HEAD}^{commit}"
           git -C .candidate diff --check "$EVENT_BASE_SHA...$EVENT_HEAD"
+          python3 .gate/scripts/verify-agent-context-approval.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --repo-dir .candidate \
+            --base-sha "$EVENT_BASE_SHA" \
+            --head-sha "$EVENT_HEAD"
           python3 .gate/scripts/verify-underbark-supabase-config.py \
             .candidate/supabase/config.toml
 
@@ -118,6 +150,72 @@ jobs:
             echo "Apple runtime verification is release-scoped."
           fi
 
+  website_context:
+    name: Verify website agent context
+    if: ${{ github.repository == 'Synapselabs-au/Underbark-Web' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted gate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: Synapselabs-au/.github
+          ref: ${{ github.workflow_sha }}
+          path: .gate
+          persist-credentials: false
+
+      - name: Check out candidate without persisted credentials
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: .candidate
+          persist-credentials: false
+
+      - name: Verify exact website agent context
+        env:
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          require_same_pr() {
+            read -r live_head live_base_ref live_state < <(gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state] | @tsv')
+            if [[ "$live_head" != "$EVENT_HEAD" \
+              || "$live_base_ref" != "$EVENT_BASE_REF" \
+              || "$live_state" != "open" ]]; then
+              echo "Refusing changed, closed, or wrong-base pull request state." >&2
+              exit 1
+            fi
+          }
+
+          require_same_pr
+          if [[ "$EVENT_BASE_REF" != "dev" ]]; then
+            echo "Underbark website pull requests must target dev." >&2
+            exit 1
+          fi
+
+          git -C .candidate cat-file -e "${EVENT_BASE_SHA}^{commit}"
+          git -C .candidate cat-file -e "${EVENT_HEAD}^{commit}"
+          git -C .candidate diff --check "$EVENT_BASE_SHA...$EVENT_HEAD"
+          python3 .gate/scripts/verify-agent-context-approval.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --repo-dir .candidate \
+            --base-sha "$EVENT_BASE_SHA" \
+            --head-sha "$EVENT_HEAD"
+
+          require_same_pr
+          echo "Website pull request head and trusted agent context verified."
+
   functions:
     name: Verify backend functions
     needs: classify
@@ -135,7 +233,12 @@ jobs:
           path: .candidate
           persist-credentials: false
 
-      - name: Verify isolated Supabase functions
+      - name: Set up Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+
+      - name: Verify isolated backend functions
         working-directory: .candidate
         run: |
           set -euo pipefail
@@ -177,6 +280,20 @@ jobs:
             test -s /tmp/underbark-deno-test-files
             xargs -0 deno test --frozen --config supabase/functions/deno.json < /tmp/underbark-deno-test-files
           '
+
+          if [[ -d services/apple-notifications ]]; then
+            if find services/apple-notifications -type l -print -quit | grep -q .; then
+              echo "Symlinks are not allowed under services/apple-notifications." >&2
+              exit 1
+            fi
+            timeout 10m npm --prefix services/apple-notifications ci --ignore-scripts
+            (
+              cd services/apple-notifications
+              timeout 10m node --import tsx --test 'test/**/*.test.ts'
+              timeout 10m node node_modules/typescript/bin/tsc --noEmit
+            )
+            timeout 5m npm --prefix services/apple-notifications audit --omit=dev
+          fi
 
   database:
     name: Verify backend database
@@ -257,7 +374,7 @@ jobs:
   result:
     name: Underbark PR Gate result
     if: ${{ always() && github.repository == 'Synapselabs-au/Underbark' }}
-    needs: [classify, functions, database]
+    needs: [governance_claims, classify, functions, database]
     permissions:
       contents: read
       pull-requests: read

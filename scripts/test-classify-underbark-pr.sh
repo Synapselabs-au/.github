@@ -123,19 +123,33 @@ fi
 localization_fixture_records=()
 for localization_path in "${localization_fixture_paths[@]}"; do
   localization_fixture_records+=(A "$localization_path")
+  expect_classification $'apple\t0\t0' \
+    "exact English localization path ${localization_path}" A "$localization_path"
+  expect_classification $'blocked\t0\t0' \
+    "unapproved English localization sibling ${localization_path}" A "${localization_path}.extra"
 done
 expect_classification $'apple\t0\t0' \
   "English localization tooling, fixtures, and metadata" \
   "${localization_fixture_records[@]}"
+for mini_path in scripts/with-build-host.sh scripts/lib/build_host.py scripts/tests/test_build_host.py scripts/tests/test_build_host_review.py; do
+  expect_classification $'apple\t0\t0' "exact mini routing path ${mini_path}" A "$mini_path"
+  expect_classification $'blocked\t0\t0' "unapproved mini routing sibling ${mini_path}" A "${mini_path}.extra"
+done
+
 expect_classification $'apple\t0\t0' "Xcode lane implementation" \
   A scripts/lib/xcode-lane.sh \
   A scripts/with-xcode-lane.sh \
   A scripts/xcode-lane-status.sh
+expect_classification $'apple\t0\t0' "bounded Xcode storage implementation" \
+  A scripts/lib/xcode-storage.sh \
+  A scripts/tests/xcode-storage-tests.sh
 expect_classification $'apple\t0\t0' "Xcode lane and governance fixtures" \
   A scripts/tests/xcode-lane-tests.sh \
   A scripts/tests/xcode-lane-security-tests.sh \
   A scripts/tests/xcode-wrapper-lane-tests.sh \
   A scripts/verify-governance.sh
+expect_classification $'apple\t0\t0' "Health binary scan fixture" A scripts/tests/health-binary-scan-tests.sh
+expect_classification $'blocked\t0\t0' "unapproved Health scan fixture sibling" A scripts/tests/health-binary-scan-tests.sh.extra
 expect_classification $'apple\t0\t0' "distribution verifier test suite" \
   M scripts/tests/verify-distribution-bundles-tests.sh
 expect_classification $'apple\t0\t0' "Xcode Cloud policy audit tooling" \
@@ -146,6 +160,9 @@ expect_classification $'apple\t0\t0' "Xcode Cloud smoke and manual-start tooling
   A scripts/tests/xcode-cloud-smoke-plan-tests.sh \
   A scripts/xcode-cloud-start-pr.sh \
   A scripts/tests/xcode-cloud-start-pr-tests.sh
+expect_classification $'apple\t0\t0' "Xcode Cloud source-policy tooling" \
+  A scripts/verify-xcode-cloud-source-policy.sh \
+  A scripts/verify-xcode-cloud-source-policy-tests.sh
 expect_classification $'apple\t0\t0' "TestFlight release automation" \
   A Config/TestFlightWhatToTest-en-AU.txt \
   A scripts/release-testflight.sh \
@@ -164,6 +181,14 @@ expect_classification $'apple\t0\t0' "mixed docs and Apple" M docs/README.md M R
 expect_classification $'backend\t1\t0' "Supabase function source" M supabase/functions/delete-account/index.ts
 expect_classification $'backend\t1\t0' "Supabase function handler" M supabase/functions/delete-account/handler.ts
 expect_classification $'backend\t1\t0' "Supabase function documentation" M supabase/functions/README.md
+expect_classification $'backend\t1\t0' "Apple notification Node service" \
+  A services/apple-notifications/.gitignore \
+  A services/apple-notifications/package-lock.json \
+  A services/apple-notifications/package.json \
+  A services/apple-notifications/api/apple-notifications.ts \
+  A services/apple-notifications/src/apple-verifier.ts \
+  A services/apple-notifications/test/notification-handler.test.ts \
+  A services/apple-notifications/vercel.json
 expect_classification $'backend\t0\t1' "Supabase migration" M supabase/migrations/20260101000000_example.sql
 expect_classification $'backend\t0\t1' "fixture Supabase migration" A supabase/migrations/20260812000000_fixture.sql
 expect_classification $'backend\t0\t1' "Supabase database test" M supabase/tests/example.sql
@@ -174,6 +199,14 @@ expect_classification $'backend\t1\t1' "approved launch load core" \
   A scripts/load/underbark-load-core.ts
 expect_classification $'backend\t1\t1' "approved launch load core tests" \
   A scripts/tests/underbark-load-core-tests.ts
+expect_classification $'backend\t1\t1' "approved provider metrics collector" \
+  A scripts/load/underbark-provider-metrics.ts
+expect_classification $'backend\t1\t1' "approved provider metrics collector tests" \
+  A scripts/tests/underbark-provider-metrics-tests.ts
+expect_classification $'backend\t1\t1' "approved Auth provider posture verifier" \
+  A scripts/verify-supabase-auth-provider-posture.ts
+expect_classification $'backend\t1\t1' "approved Auth provider posture verifier tests" \
+  A scripts/tests/underbark-auth-provider-posture-tests.ts
 expect_classification $'backend\t0\t1' "Supabase seed" M supabase/seed.sql
 expect_classification $'backend\t0\t1' "Supabase schema" M supabase/schemas/example.sql
 expect_classification $'backend\t1\t1' "function plus migration" \
@@ -196,6 +229,24 @@ expect_classification $'blocked\t0\t0' "unlisted new script stays denied" \
   A scripts/xcode-cloud-nuke.sh
 expect_classification $'blocked\t0\t0' "unlisted load script stays denied" \
   A scripts/load/arbitrary.ts
+expect_classification $'blocked\t0\t0' "provider metrics collector suffix lookalike stays denied" \
+  A scripts/load/underbark-provider-metrics.ts.bak
+expect_classification $'blocked\t0\t0' "provider metrics test suffix lookalike stays denied" \
+  A scripts/tests/underbark-provider-metrics-tests.ts.bak
+expect_classification $'blocked\t0\t0' "nested provider metrics collector stays denied" \
+  A scripts/load/archive/underbark-provider-metrics.ts
+expect_classification $'blocked\t0\t0' "nested provider metrics test stays denied" \
+  A scripts/tests/archive/underbark-provider-metrics-tests.ts
+expect_classification $'blocked\t0\t0' "Auth provider posture verifier suffix lookalike stays denied" \
+  A scripts/verify-supabase-auth-provider-posture.ts.bak
+expect_classification $'blocked\t0\t0' "Auth provider posture test suffix lookalike stays denied" \
+  A scripts/tests/underbark-auth-provider-posture-tests.ts.bak
+expect_classification $'blocked\t0\t0' "nested Auth provider posture verifier stays denied" \
+  A scripts/archive/verify-supabase-auth-provider-posture.ts
+expect_classification $'blocked\t0\t0' "nested Auth provider posture test stays denied" \
+  A scripts/tests/archive/underbark-auth-provider-posture-tests.ts
+expect_classification $'blocked\t0\t0' "other services stay denied" \
+  A services/other-backend/api/index.ts
 expect_classification $'blocked\t0\t0' "unknown workflow" A .github/workflows/new-workflow.yml
 expect_classification $'blocked\t0\t0' "repository integrity workflow lookalike" \
   A .github/workflows/repo-integrity-sentinel-copy.yml
