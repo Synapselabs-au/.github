@@ -148,6 +148,8 @@ export_coverage_paths=(
   docs/data/EXPORT_COVERAGE.json
   scripts/verify-export-coverage.py
   scripts/tests/test_export_coverage.py
+  scripts/manual-import-process-drill.py
+  scripts/tests/test_manual_import_process_drill.py
 )
 for export_status in A M D; do
   export_coverage_records=()
@@ -170,6 +172,8 @@ expect_classification $'blocked\t0\t0' "export coverage cannot hide unknown scri
   A docs/data/EXPORT_COVERAGE.json \
   A scripts/verify-export-coverage.py \
   A scripts/tests/test_export_coverage.py \
+  A scripts/manual-import-process-drill.py \
+  A scripts/tests/test_manual_import_process_drill.py \
   A scripts/verify-other-export.py
 
 for diagnostic_path in scripts/load/entitlement-timing.ts scripts/tests/entitlement-timing-tests.ts; do

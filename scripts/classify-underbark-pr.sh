@@ -79,7 +79,7 @@ while true; do
     scripts/with-build-host.sh|scripts/lib/build_host.py|scripts/tests/test_build_host.py|scripts/tests/test_build_host_review.py)
       apple=1
       ;;
-    docs/data/EXPORT_COVERAGE.json|scripts/verify-export-coverage.py|scripts/tests/test_export_coverage.py)
+    docs/data/EXPORT_COVERAGE.json|scripts/verify-export-coverage.py|scripts/tests/test_export_coverage.py|scripts/manual-import-process-drill.py|scripts/tests/test_manual_import_process_drill.py)
       apple=1
       ;;
     # The self-hosted Swift verification workflow. Apple-scoped because it
