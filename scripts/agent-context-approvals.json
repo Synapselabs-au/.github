@@ -2,6 +2,13 @@
   "version": 1,
   "approvals": [
     {
+      "head_sha": "61acbf9b2fad9ea728cd33d89a2016938e4908da",
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
       "head_sha": "4b54a6faf25197ba5fbddb81b84eb0e03d12ff6f",
       "protected_paths": [
         "AGENTS.md",
