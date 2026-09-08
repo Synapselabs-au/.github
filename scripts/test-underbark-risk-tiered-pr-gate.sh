@@ -41,6 +41,103 @@ empty_diff_classification="$(
   exit 1
 }
 
+ruby -ryaml -rtmpdir -rfileutils -ropen3 -rjson - "$workflow" <<'RUBY'
+jobs = YAML.load_file(ARGV.fetch(0)).fetch("jobs")
+worker = jobs.fetch("worker") { abort "FAIL: isolated Worker verification job missing" }
+body = worker.fetch("steps").map { |step| step["run"] }.compact.fetch(0)
+# Execute the shipped shell block. Stub only external dependency tools, avoiding downloads.
+Dir.mktmpdir("underbark-worker-fixtures-") do |root|
+  script = File.join(root, "verify.sh")
+  File.write(script, body)
+  cases = %w[absent services-absent valid noop-scripts empty-tests parent-symlink dangling-parent worker-symlink dangling-worker nested-symlink file-parent file-worker install-failure types-failure tsc-failure tests-failure check-failure bundle-failure production-audit-failure audit-failure]
+  cases.each do |name|
+    candidate = File.join(root, name)
+    service = File.join(candidate, "services/push-edge")
+    FileUtils.mkdir_p(File.join(service, "test"))
+    File.write(File.join(service, "test/worker.test.ts"), "test fixture")
+    File.write(File.join(service, "package.json"), JSON.generate({scripts: {test: "true", typecheck: "true", types: "true"}}))
+    File.write(File.join(service, "package-lock.json"), "{}")
+    case name
+    when "absent" then FileUtils.rm_rf(service)
+    when "services-absent" then FileUtils.rm_rf(File.dirname(service))
+    when "empty-tests" then FileUtils.rm_rf(File.join(service, "test"))
+    when "parent-symlink", "dangling-parent"
+      FileUtils.mv(File.dirname(service), File.join(candidate, "real-services"))
+      File.symlink(name == "parent-symlink" ? "real-services" : "missing", File.dirname(service))
+    when "worker-symlink", "dangling-worker"
+      FileUtils.mv(service, File.join(candidate, "real-worker"))
+      File.symlink(name == "worker-symlink" ? "../real-worker" : "missing", service)
+    when "nested-symlink" then File.symlink("missing", File.join(service, "nested"))
+    when "file-parent", "file-worker"
+      target = name == "file-parent" ? File.dirname(service) : service
+      FileUtils.rm_rf(target)
+      File.write(target, "not a directory")
+    end
+    bin = File.join(candidate, "bin")
+    FileUtils.mkdir_p(bin)
+    File.write(File.join(bin, "npm"), <<~'SH')
+      #!/bin/bash
+      case "$*" in
+        "ci --ignore-scripts") operation=install ;;
+        "audit --omit=dev") operation=production-audit ;;
+        "audit") operation=audit ;;
+        *) exit 91 ;;
+      esac
+      echo "$operation" >> "$FIXTURE_LOG"
+      [[ "$FIXTURE_CASE" != "$operation-failure" ]]
+    SH
+    File.write(File.join(bin, "node"), <<~'SH')
+      #!/bin/bash
+      case "$*" in
+        "node_modules/wrangler/bin/wrangler.js types") operation=types ;;
+        "node_modules/typescript/bin/tsc --noEmit") operation=tsc ;;
+        "node_modules/vitest/vitest.mjs run --passWithNoTests=false") operation=tests ;;
+        "node_modules/wrangler/bin/wrangler.js types --check") operation=check ;;
+        "node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir "*)
+          [[ "$5" == "$TMPDIR"/* ]] || exit 92
+          [[ -d "$5" ]] || exit 93
+          operation=bundle ;;
+        *) exit 94 ;;
+      esac
+      echo "$operation" >> "$FIXTURE_LOG"
+      [[ "$FIXTURE_CASE" != "$operation-failure" ]] || exit 1
+      [[ "$FIXTURE_CASE" != noop-scripts || "$operation" != tests ]]
+    SH
+    FileUtils.chmod(0755, Dir[File.join(bin, "*")])
+    scratch = File.join(candidate, "scratch")
+    FileUtils.mkdir_p(scratch)
+    log = File.join(candidate, "commands.log")
+    output, status = Open3.capture2e({"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "TMPDIR" => scratch,
+      "FIXTURE_CASE" => name, "FIXTURE_LOG" => log}, "bash", script, chdir: candidate)
+    wanted = %w[absent services-absent valid].include?(name)
+    raise "Worker fixture #{name}: unexpected status #{status.exitstatus}: #{output}" unless status.success? == wanted
+    raise "Worker scratch leaked in #{name}" unless Dir.children(scratch).empty?
+    commands = File.exist?(log) ? File.readlines(log, chomp: true) : []
+    raise "Worker commands missing or reordered" if name == "valid" && commands != %w[install types tsc tests check bundle production-audit audit]
+    if %w[absent services-absent empty-tests parent-symlink dangling-parent worker-symlink dangling-worker nested-symlink file-parent file-worker].include?(name)
+      raise "Rejected Worker executed tools: #{name}" unless commands.empty?
+    end
+  end
+  result_script = File.join(root, "result.sh")
+  File.write(result_script, jobs.fetch("result").fetch("steps").fetch(0).fetch("run"))
+  result_bin = File.join(root, "result-bin")
+  FileUtils.mkdir_p(result_bin)
+  File.write(File.join(result_bin, "gh"), "#!/bin/bash\nprintf 'fixture-head\\tdev\\topen\\n'\n")
+  FileUtils.chmod(0755, File.join(result_bin, "gh"))
+  [["1", "success", true], ["1", "failure", false], ["1", "cancelled", false],
+   ["1", "skipped", false], ["0", "skipped", true], ["0", "success", false]].each do |selected, actual, wanted|
+    output, status = Open3.capture2e({"PATH" => "#{result_bin}:#{ENV.fetch('PATH')}",
+      "CLASSIFY_RESULT" => "success", "CLASSIFICATION" => selected == "1" ? "backend" : "static",
+      "BACKEND_FUNCTIONS" => selected, "BACKEND_DATABASE" => "0", "DATABASE_RESULT" => "skipped",
+      "FUNCTIONS_RESULT" => selected == "1" ? "success" : "skipped", "WORKER_RESULT" => actual,
+      "EVENT_HEAD" => "fixture-head", "EVENT_BASE_REF" => "dev", "GITHUB_REPOSITORY" => "fixture/repo",
+      "PR_NUMBER" => "1"}, "bash", result_script)
+    raise "Worker aggregator selected=#{selected} actual=#{actual}: #{output}" unless status.success? == wanted
+  end
+end
+puts "UNDERBARK_WORKER_BEHAVIOR_FIXTURES_OK"
+RUBY
+
 ruby -ryaml -rdigest -rjson - "$workflow" <<'RUBY'
 require "psych"
 
@@ -66,7 +163,7 @@ end
 reject_duplicate_keys(Psych.parse_stream(File.read(path)))
 workflow = YAML.load_file(path)
 jobs = workflow.fetch("jobs")
-expected_jobs = %w[governance_claims classify website_context functions database result]
+expected_jobs = %w[governance_claims classify website_context functions worker database result]
 raise "unexpected job graph" unless jobs.keys == expected_jobs
 raise "pull request trigger is narrowed" unless workflow.fetch(true).fetch("pull_request").nil?
 raise "required result name changed" unless jobs.fetch("result").fetch("name") == "Underbark PR Gate result"
@@ -81,7 +178,7 @@ raise "classifier does not depend on isolated governance claims" unless
 raise "website context repository guard missing" unless jobs.fetch("website_context")["if"] ==
   "${{ github.repository == 'Synapselabs-au/Underbark-Web' }}"
 raise "terminal dependencies changed" unless jobs.fetch("result").fetch("needs") ==
-  %w[governance_claims classify functions database]
+  %w[governance_claims classify functions worker database]
 raise "terminal job is not always-run" unless jobs.fetch("result").fetch("if").include?("always()")
 raise "workflow permissions must default to none" unless workflow.fetch("permissions") == {}
 raise "concurrency changed" unless workflow.fetch("concurrency") == {
@@ -101,6 +198,7 @@ expected_timeouts = {
   "classify" => 10,
   "website_context" => 10,
   "functions" => 45,
+  "worker" => 15,
   "database" => 50,
   "result" => 10,
 }
@@ -109,6 +207,7 @@ expected_permissions = {
   "classify" => {"contents" => "read", "pull-requests" => "read"},
   "website_context" => {"contents" => "read", "pull-requests" => "read"},
   "functions" => {"contents" => "read"},
+  "worker" => {"contents" => "read"},
   "database" => {"contents" => "read"},
   "result" => {"contents" => "read", "pull-requests" => "read"},
 }
@@ -143,7 +242,7 @@ jobs.each do |name, job|
   end
 end
 
-%w[governance_claims functions database].each do |name|
+%w[governance_claims functions worker database].each do |name|
   body = serialized(jobs.fetch(name))
   raise "#{name} received a GitHub token" if body.include?("github.token") || body.include?("GH_TOKEN")
   raise "#{name} received a secret" if body.include?("secrets")
@@ -158,16 +257,18 @@ expected_run_hashes = {
   "classify" => "a66726736e8f36dbeb1e6179a7fa83fea000f95d11fd27a82507bdf34ac983fa",
   "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
   "functions" => "70540c360a85f9fe5768ace078a4540097ad53ff4a81e07ef6531d9e4cb74143",
+  "worker" => "a5c2577b91baa7bf7230e65ca267f1d65f3842581d79b10a10569b1b0f717d2a",
   "database" => "dcdf60915883f8607d4272b66d3e59dc04ce62e52915f666493e064077bf6d93",
-  "result" => "74ddc71787346c4596a98626fdf715ac13b41f4a949c1a5a5c84090ff18b8afe",
+  "result" => "a9bd8bf648b68eae328045d74d93d8ec69613dd1672a24bce5c104cc0842eb5a",
 }
 expected_step_hashes = {
   "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
   "classify" => "ec9d0e759eb3374d7fb8e2a686d2485992d6764acea5fa15280053269f14e244",
   "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
   "functions" => "de34e4fb1202e46c24988d5a70776102cf54a95fbdc4ee97574e9ae5268933fa",
+  "worker" => "e7a5a6b0cf7a2ac33daf63cf541085f9aee21ce0a0dc07c0ca5519145b65d2d9",
   "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",
-  "result" => "dc605f0653c15682675729a53c64c155eb366bfd4e894cd4089991a7264eee5c",
+  "result" => "adc8772659de234003859202abf8a40dc18ee6ca0f59c9eb59fca28c891f6373",
 }
 expected_run_hashes.each do |name, digest|
   job_scripts = scripts(jobs.fetch(name))
@@ -256,6 +357,16 @@ raise "Node setup action changed" unless
 raise "Node setup version changed" unless setup_node.fetch("with") == {"node-version" => "24"}
 
 functions = scripts(functions_job).fetch(0)
+worker_job = jobs.fetch("worker")
+raise "Worker selection changed" unless worker_job.fetch("needs") == "classify" &&
+  worker_job.fetch("if") == functions_job.fetch("if")
+worker_steps = worker_job.fetch("steps")
+raise "Worker must execute in a separate candidate job" unless worker_steps.length == 3 &&
+  worker_steps.fetch(0) == functions_steps.fetch(0) &&
+  worker_steps.fetch(1) == setup_node &&
+  worker_steps.fetch(2).fetch("working-directory") == ".candidate"
+raise "Worker job can access trusted gate" if serialized(worker_job).include?(".gate")
+raise "Worker verification leaked into existing functions job" if functions.include?("push-edge")
 raise "Deno image is not digest-pinned" unless functions.include?("denoland/deno:2.9.5@sha256:")
 raise "Deno candidate code is host-mounted" if functions.include?("--mount") || functions.match?(/\s-v\s/)
 raise "Deno container became privileged" if functions.include?("--privileged")
@@ -286,6 +397,9 @@ raise "SQL does not fail closed" unless database.include?("ON_ERROR_STOP=1")
 
 result = scripts(jobs.fetch("result")).fetch(0)
 raise "selected backend lanes are not aggregated" unless result.include?("require_lane_result")
+raise "Worker result is not required by the function selector" unless
+  result.include?('require_lane_result "$BACKEND_FUNCTIONS" "$WORKER_RESULT" "Worker"') &&
+  jobs.fetch("result").fetch("steps").fetch(0).fetch("env").fetch("WORKER_RESULT") == "${{ needs.worker.result }}"
 raise "Apple classifications are not accepted" unless result.include?("apple:0:0|apple-backend:1:0|apple-backend:0:1|apple-backend:1:1")
 raise "head race guard missing from terminal result" unless result.include?("Refusing changed, closed, or wrong-base pull request state.")
 raise "terminal result still waits for Apple PR evidence" if result.include?("APPLE_RESULT") || result.include?("APPLE_CHECK_NAME")

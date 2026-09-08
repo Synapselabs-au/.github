@@ -26,6 +26,13 @@ expect_classification() {
 }
 
 expect_classification $'static\t0\t0' "ordinary Markdown only" M README.md
+for worker_path in src/index.ts test/worker.test.ts package.json package-lock.json wrangler.jsonc vitest.config.ts tsconfig.json README.md; do
+  for worker_status in A M D T; do
+    expect_classification $'backend\t1\t0' "push Worker $worker_status $worker_path" "$worker_status" "services/push-edge/$worker_path"
+  done
+done
+expect_classification $'apple-backend\t1\t0' "Worker with Apple source" M services/push-edge/src/index.ts M Recovr/AppModel.swift
+expect_classification $'blocked\t0\t0' "unapproved adjacent service" M services/push-edge-other/src/index.ts
 expect_classification $'static\t0\t0' "nested Markdown" A docs/guides/setup.md
 expect_classification $'static\t0\t0' "pull request template" M .github/pull_request_template.md
 expect_classification $'static\t0\t0' "issue template lifecycle" \

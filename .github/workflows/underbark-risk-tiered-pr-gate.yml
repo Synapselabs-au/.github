@@ -316,6 +316,66 @@ jobs:
             timeout 5m npm --prefix services/apple-notifications audit --omit=dev
           fi
 
+  worker:
+    name: Verify push Worker
+    needs: classify
+    if: ${{ needs.classify.result == 'success' && needs.classify.outputs.backend_functions == '1' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out candidate without persisted credentials
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .candidate
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+
+      - name: Verify isolated push Worker
+        working-directory: .candidate
+        run: |
+          set -euo pipefail
+
+          for path in services services/push-edge; do
+            if [[ -L "$path" || ( -e "$path" && ! -d "$path" ) ]]; then
+              echo "Worker path must be a real directory: $path" >&2
+              exit 1
+            fi
+          done
+          if [[ ! -d services/push-edge ]]; then
+            echo "No push Worker in this candidate."
+            exit 0
+          fi
+          if [[ -n "$(find services/push-edge -type l -print -quit)" ]]; then
+            echo "Symlinks are not allowed under services/push-edge." >&2
+            exit 1
+          fi
+          cd services/push-edge
+          test -f package.json
+          test -f package-lock.json
+          test -d test
+          test -n "$(find test -type f -name '*.test.ts' -print -quit)"
+
+          worker_output="$(mktemp -d "${TMPDIR:-/tmp}/underbark-worker-dry-run.XXXXXX")"
+          trap 'rm -rf -- "$worker_output"' EXIT
+          export CI=true
+          export WRANGLER_SEND_METRICS=false
+          npm ci --ignore-scripts
+          node node_modules/wrangler/bin/wrangler.js types
+          node node_modules/typescript/bin/tsc --noEmit
+          node node_modules/vitest/vitest.mjs run --passWithNoTests=false
+          node node_modules/wrangler/bin/wrangler.js types --check
+          node node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir "$worker_output"
+          npm audit --omit=dev
+          npm audit
+
   database:
     name: Verify backend database
     needs: classify
@@ -395,7 +455,7 @@ jobs:
   result:
     name: Underbark PR Gate result
     if: ${{ always() && github.repository == 'Synapselabs-au/Underbark' }}
-    needs: [governance_claims, classify, functions, database]
+    needs: [governance_claims, classify, functions, worker, database]
     permissions:
       contents: read
       pull-requests: read
@@ -411,6 +471,7 @@ jobs:
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           FUNCTIONS_RESULT: ${{ needs.functions.result }}
+          WORKER_RESULT: ${{ needs.worker.result }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           CLASSIFY_RESULT: ${{ needs.classify.result }}
@@ -444,6 +505,7 @@ jobs:
           esac
 
           require_lane_result "$BACKEND_FUNCTIONS" "$FUNCTIONS_RESULT" "function"
+          require_lane_result "$BACKEND_FUNCTIONS" "$WORKER_RESULT" "Worker"
           require_lane_result "$BACKEND_DATABASE" "$DATABASE_RESULT" "database"
 
           read -r final_head final_base_ref final_state < <(gh api \

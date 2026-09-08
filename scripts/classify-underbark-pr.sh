@@ -50,7 +50,7 @@ while true; do
     docs/release/app-store-localizations/en-AU.json|docs/release/app-store-localizations/en-GB.json|docs/release/app-store-localizations/en-US.json)
       apple=1
       ;;
-    services/apple-notifications/*)
+    services/apple-notifications/*|services/push-edge/*)
       backend_functions=1
       ;;
     supabase/functions/*)
