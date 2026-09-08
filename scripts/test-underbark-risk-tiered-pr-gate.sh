@@ -254,8 +254,8 @@ raise "token-bearing job boundary changed" unless token_jobs == %w[classify webs
 
 expected_run_hashes = {
   "governance_claims" => "0ddd464456f46c99c4482305babc2a55292691faeae29812c962c13b948720b4",
-  "classify" => "a66726736e8f36dbeb1e6179a7fa83fea000f95d11fd27a82507bdf34ac983fa",
-  "website_context" => "a297051acb70e8a8957a8669c49624e425e04823ce0a221b986410a52e13308b",
+  "classify" => "21b280b0183339595e84e231ad492d11e36d7573560322093743d410cf4bc569",
+  "website_context" => "82ee59081e963a80129ccf1719a0d656588750253f2462749197f58b06b4d13c",
   "functions" => "66b6beaed43a278787afa560d5d8e4cfc8b68bf0e8c2832a3984ba9c1c6c1459",
   "worker" => "a5c2577b91baa7bf7230e65ca267f1d65f3842581d79b10a10569b1b0f717d2a",
   "database" => "dcdf60915883f8607d4272b66d3e59dc04ce62e52915f666493e064077bf6d93",
@@ -263,8 +263,8 @@ expected_run_hashes = {
 }
 expected_step_hashes = {
   "governance_claims" => "e165ec599022601a803b26689fb15157ef1e025cae7614e7f14fd1083ca553ba",
-  "classify" => "ec9d0e759eb3374d7fb8e2a686d2485992d6764acea5fa15280053269f14e244",
-  "website_context" => "be4c80bba94d426b1af86b3f5b625f3aeed884b524c9b63a9214c85d93ff137e",
+  "classify" => "5d8646803293bc9baebd3cbfc594fc059288fb856b117a90ba657381ef01671e",
+  "website_context" => "bc2b29a7a15ff5c886c11d31f82297bf4d64ce7e10f6fb0b82c315f6acaaac24",
   "functions" => "b8cc3b6dce8d15d372e417130b8b53489ee29e10be2ef560fca0f9dc2beae5c5",
   "worker" => "e7a5a6b0cf7a2ac33daf63cf541085f9aee21ce0a0dc07c0ca5519145b65d2d9",
   "database" => "13cc23605e02f80e41335d0444f6c155731d0d17941acb8815f1f162a82fdbee",

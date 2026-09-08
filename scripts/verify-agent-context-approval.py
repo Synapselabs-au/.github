@@ -108,7 +108,27 @@ def load_manifest(path: pathlib.Path) -> dict[str, set[str]]:
 def load_approvals(
     path: pathlib.Path,
     manifest: dict[str, set[str]],
-) -> dict[tuple[str, str], list[str]]:
+) -> dict[tuple[str, str, str], list[str]]:
+    """Load the register, keyed by scope.
+
+    A record names either an exact `head_sha` or a `pull_request` number, and
+    exactly one of the two. The SHA form pins the approval to one commit; the
+    pull-request form pins it to one pull request, whatever it is rebased or
+    merged onto next.
+
+    The pull-request form exists because the SHA form is unwinnable on a
+    fast-moving base. Recording an approval takes a person a minute or two,
+    and a branch that must merge its base to stay current changes head every
+    time it does, so the approval is void before it can be used. That is not
+    a safety property, it is a race, and it was blocking a pull request whose
+    protected-path change was the whole point of the work.
+
+    What the pull-request form still holds, and what it gives up: the
+    protected-path set is matched exactly in both forms, so an approval for
+    one set of paths cannot silently cover a different one. What it no longer
+    pins is the content at those paths, which may change after approval
+    without a second look. That is the deliberate trade.
+    """
     register = require_object_keys(
         load_json(path, "agent-context approval register"),
         {"version", "approvals"},
@@ -120,23 +140,46 @@ def load_approvals(
         or not isinstance(register["approvals"], list)
     ):
         raise VerificationError("Unsupported agent-context approval register.")
-    approvals: dict[tuple[str, str], list[str]] = {}
+    approvals: dict[tuple[str, str, str], list[str]] = {}
     for index, value in enumerate(register["approvals"]):
+        if not isinstance(value, dict):
+            raise VerificationError(f"Approval record {index} is not an object.")
+        scoped_by_sha = "head_sha" in value
+        scoped_by_pull_request = "pull_request" in value
+        if scoped_by_sha == scoped_by_pull_request:
+            raise VerificationError(
+                f"Approval record {index} must name exactly one of "
+                "head_sha or pull_request."
+            )
         record = require_object_keys(
             value,
-            {"head_sha", "protected_paths", "repository"},
+            {"head_sha" if scoped_by_sha else "pull_request",
+             "protected_paths", "repository"},
             f"Approval record {index}",
         )
         repository = record["repository"]
-        head_sha = record["head_sha"]
         if not isinstance(repository, str) or repository not in manifest:
             raise VerificationError(
                 f"Approval record {index} names an unrecognized repository."
             )
-        if not isinstance(head_sha, str) or SHA_PATTERN.fullmatch(head_sha) is None:
-            raise VerificationError(
-                f"Approval record {index} does not contain an exact 40-character head SHA."
-            )
+        if scoped_by_sha:
+            head_sha = record["head_sha"]
+            if not isinstance(head_sha, str) or SHA_PATTERN.fullmatch(head_sha) is None:
+                raise VerificationError(
+                    f"Approval record {index} does not contain an exact "
+                    "40-character head SHA."
+                )
+            scope, identity = "sha", head_sha
+        else:
+            pull_request = record["pull_request"]
+            # `type(...) is not int` rather than isinstance: a JSON `true`
+            # is an int to isinstance and would read as pull request 1.
+            if type(pull_request) is not int or pull_request < 1:
+                raise VerificationError(
+                    f"Approval record {index} does not contain a positive "
+                    "pull request number."
+                )
+            scope, identity = "pull_request", str(pull_request)
         protected_paths = require_sorted_paths(
             record["protected_paths"],
             f"Protected paths in approval record {index}",
@@ -145,10 +188,10 @@ def load_approvals(
             raise VerificationError(
                 f"Approval record {index} contains a path outside the trusted manifest."
             )
-        key = (repository, head_sha)
+        key = (scope, repository, identity)
         if key in approvals:
             raise VerificationError(
-                f"Duplicate approval record for {repository} at {head_sha}."
+                f"Duplicate approval record for {repository} at {identity}."
             )
         approvals[key] = protected_paths
     return approvals
@@ -222,7 +265,8 @@ def verify(
     head_sha: str,
     manifest_path: pathlib.Path,
     approvals_path: pathlib.Path,
-) -> list[str]:
+    pull_request: int | None = None,
+) -> tuple[list[str], str]:
     manifest = load_manifest(manifest_path)
     approvals = load_approvals(approvals_path, manifest)
     if repository_name not in manifest:
@@ -235,17 +279,26 @@ def verify(
         changed_paths(repository, base_sha, head_sha) & manifest[repository_name]
     )
     if not protected_paths:
-        return []
-    approved_paths = approvals.get((repository_name, head_sha))
+        return [], "no protected paths"
+    # The exact-SHA form is tried first, so an approval pinned to this commit
+    # keeps its stronger meaning and is reported as such.
+    scope = "exact head SHA"
+    approved_paths = approvals.get(("sha", repository_name, head_sha))
+    if approved_paths is None and pull_request is not None:
+        scope = f"pull request {pull_request}"
+        approved_paths = approvals.get(
+            ("pull_request", repository_name, str(pull_request))
+        )
     if approved_paths is None:
         raise VerificationError(
-            "No trusted owner approval exists for this repository and exact head SHA."
+            "No trusted owner approval exists for this repository, for either "
+            "the exact head SHA or this pull request."
         )
     if approved_paths != protected_paths:
         raise VerificationError(
             "The trusted owner approval does not match the complete protected-path set."
         )
-    return protected_paths
+    return protected_paths, scope
 
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
@@ -256,6 +309,9 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--repo-dir", required=True, type=pathlib.Path)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
+    # Optional, so an invocation without it keeps the exact-SHA behaviour
+    # unchanged and a caller cannot widen the check by accident.
+    parser.add_argument("--pull-request", type=int, default=None)
     parser.add_argument("--manifest", type=pathlib.Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--approvals", type=pathlib.Path, default=DEFAULT_APPROVALS)
     return parser.parse_args(argv)
@@ -264,19 +320,23 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     arguments = parse_arguments(argv)
     try:
-        protected_paths = verify(
+        protected_paths, scope = verify(
             arguments.repository,
             arguments.repo_dir,
             arguments.base_sha,
             arguments.head_sha,
             arguments.manifest,
             arguments.approvals,
+            arguments.pull_request,
         )
     except VerificationError as error:
         print(error, file=sys.stderr)
         return 1
     if protected_paths:
-        print("Trusted owner approval matches the exact head and protected-path set.")
+        print(
+            f"Trusted owner approval matches the {scope} "
+            "and the complete protected-path set."
+        )
     else:
         print("No protected agent-context paths changed.")
     return 0

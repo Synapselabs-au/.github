@@ -135,31 +135,43 @@ class AgentContextApprovalTests(unittest.TestCase):
             "protected_paths": protected_paths,
         }
 
+    def pull_request_approval(
+        self,
+        repository: str,
+        pull_request: int,
+        protected_paths: list[str],
+    ) -> dict[str, object]:
+        return {
+            "repository": repository,
+            "pull_request": pull_request,
+            "protected_paths": protected_paths,
+        }
+
     def verify(
         self,
         repository: str,
         head_sha: str,
+        pull_request: int | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [
-                sys.executable,
-                str(VERIFIER),
-                "--repository",
-                repository,
-                "--repo-dir",
-                str(self.candidate.root),
-                "--base-sha",
-                self.candidate.base,
-                "--head-sha",
-                head_sha,
-                "--manifest",
-                str(self.manifest),
-                "--approvals",
-                str(self.approvals),
-            ],
-            text=True,
-            capture_output=True,
-        )
+        arguments = [
+            sys.executable,
+            str(VERIFIER),
+            "--repository",
+            repository,
+            "--repo-dir",
+            str(self.candidate.root),
+            "--base-sha",
+            self.candidate.base,
+            "--head-sha",
+            head_sha,
+            "--manifest",
+            str(self.manifest),
+            "--approvals",
+            str(self.approvals),
+        ]
+        if pull_request is not None:
+            arguments += ["--pull-request", str(pull_request)]
+        return subprocess.run(arguments, text=True, capture_output=True)
 
     def assert_accepted(self, repository: str, head_sha: str) -> None:
         result = self.verify(repository, head_sha)
@@ -364,6 +376,94 @@ class AgentContextApprovalTests(unittest.TestCase):
 
     def test_unknown_well_formed_head_sha_is_rejected(self) -> None:
         self.assert_rejected(APP_REPOSITORY, "f" * 40)
+
+    # The pull-request scope. Its whole reason for existing is that the head
+    # moves while an approval is being recorded, so the tests that matter are
+    # the ones proving it still refuses everything the SHA form refused.
+
+    def test_pull_request_approval_survives_a_changed_head(self) -> None:
+        paths = [APP_PROTECTED_PATHS[0]]
+        head = self.candidate.commit("rules", {paths[0]: "changed\n"})
+        self.write_approvals([self.pull_request_approval(APP_REPOSITORY, 741, paths)])
+        # No approval names this SHA, which is the situation the exact-SHA
+        # form could not survive.
+        self.assert_rejected(APP_REPOSITORY, head)
+        result = self.verify(APP_REPOSITORY, head, pull_request=741)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("pull request 741", result.stdout)
+
+    def test_pull_request_approval_does_not_cover_another_pull_request(self) -> None:
+        paths = [APP_PROTECTED_PATHS[0]]
+        head = self.candidate.commit("rules", {paths[0]: "changed\n"})
+        self.write_approvals([self.pull_request_approval(APP_REPOSITORY, 741, paths)])
+        result = self.verify(APP_REPOSITORY, head, pull_request=742)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_pull_request_approval_does_not_cover_another_repository(self) -> None:
+        # AGENTS.md deliberately: it is protected in both repositories, so a
+        # rejection here is about the repository and not about the path being
+        # unprotected in the other one.
+        paths = ["AGENTS.md"]
+        head = self.candidate.commit("rules", {paths[0]: "changed\n"})
+        self.write_approvals([self.pull_request_approval(APP_REPOSITORY, 741, paths)])
+        result = self.verify(WEBSITE_REPOSITORY, head, pull_request=741)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_pull_request_approval_still_matches_the_exact_path_set(self) -> None:
+        # The path set is matched exactly in both scopes. This is the property
+        # the pull-request form keeps, and the reason it is not a blank cheque:
+        # approving one path never covers a second one appearing later.
+        approved = [APP_PROTECTED_PATHS[0]]
+        head = self.candidate.commit(
+            "rules",
+            {p: "changed\n" for p in APP_PROTECTED_PATHS[:2]},
+        )
+        self.write_approvals([self.pull_request_approval(APP_REPOSITORY, 741, approved)])
+        result = self.verify(APP_REPOSITORY, head, pull_request=741)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_a_record_naming_both_scopes_is_rejected(self) -> None:
+        paths = [APP_PROTECTED_PATHS[0]]
+        head = self.candidate.commit("rules", {paths[0]: "changed\n"})
+        self.write_approvals([
+            {
+                "repository": APP_REPOSITORY,
+                "head_sha": head,
+                "pull_request": 741,
+                "protected_paths": paths,
+            }
+        ])
+        self.assert_rejected(APP_REPOSITORY, head)
+
+    def test_a_record_naming_neither_scope_is_rejected(self) -> None:
+        paths = [APP_PROTECTED_PATHS[0]]
+        head = self.candidate.commit("rules", {paths[0]: "changed\n"})
+        self.write_approvals([
+            {"repository": APP_REPOSITORY, "protected_paths": paths}
+        ])
+        self.assert_rejected(APP_REPOSITORY, head)
+
+    def test_a_non_integer_pull_request_number_is_rejected(self) -> None:
+        paths = [APP_PROTECTED_PATHS[0]]
+        head = self.candidate.commit("rules", {paths[0]: "changed\n"})
+        for number in ["741", 0, -1, True]:
+            with self.subTest(number=number):
+                self.write_approvals([
+                    {
+                        "repository": APP_REPOSITORY,
+                        "pull_request": number,
+                        "protected_paths": paths,
+                    }
+                ])
+                result = self.verify(APP_REPOSITORY, head, pull_request=741)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_without_a_pull_request_argument_only_the_sha_scope_applies(self) -> None:
+        paths = [APP_PROTECTED_PATHS[0]]
+        head = self.candidate.commit("rules", {paths[0]: "changed\n"})
+        self.write_approvals([self.pull_request_approval(APP_REPOSITORY, 741, paths)])
+        self.assert_rejected(APP_REPOSITORY, head)
 
 
 if __name__ == "__main__":
