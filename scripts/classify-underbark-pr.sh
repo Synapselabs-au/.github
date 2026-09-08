@@ -10,7 +10,15 @@ backend_functions=0
 backend_database=0
 blocked=0
 
-while IFS= read -r -d '' status; do
+while true; do
+  status=''
+  if ! IFS= read -r -d '' status; then
+    if [[ -n "$status" ]]; then
+      blocked=1
+    fi
+    break
+  fi
+
   seen=1
   if ! IFS= read -r -d '' path; then
     blocked=1
@@ -26,7 +34,7 @@ while IFS= read -r -d '' status; do
   esac
 
   case "$path" in
-    ''|/*|./*|../*|*/./*|*/../*|*//*|*/|*$'\t'*|*$'\n'*|*$'\r'*)
+    ''|/*|./*|../*|*/.|*/..|*/./*|*/../*|*//*|*/|*$'\t'*|*$'\n'*|*$'\r'*)
       blocked=1
       continue
       ;;
@@ -37,6 +45,9 @@ while IFS= read -r -d '' status; do
       apple=1
       ;;
     project.yml)
+      apple=1
+      ;;
+    docs/release/app-store-localizations/en-AU.json|docs/release/app-store-localizations/en-GB.json|docs/release/app-store-localizations/en-US.json)
       apple=1
       ;;
     services/apple-notifications/*)
@@ -57,6 +68,9 @@ while IFS= read -r -d '' status; do
       backend_database=1
       ;;
     scripts/archive-app.sh|scripts/release-testflight.sh|scripts/testflight-build-retention.sh|scripts/render-brand-assets.sh|scripts/verify-archive.sh|scripts/verify-brand.sh|scripts/verify-distribution-bundles.sh|scripts/verify-governance.sh|scripts/verify-ipa.sh|scripts/verify-pr-source-policy-tests.sh|scripts/verify-pr-source-policy.sh|scripts/verify-release-record.sh|scripts/verify-signing.sh|scripts/verify-storekit-catalogue.sh|scripts/verify-user-facing-copy.sh|scripts/verify-version-change-policy-tests.sh|scripts/verify-version-change-policy.sh|scripts/verify-version.sh|scripts/verify-xcode-cloud-config.sh|scripts/verify-xcode-cloud-prebuild-tests.sh|scripts/verify-xcode-cloud-source-policy-tests.sh|scripts/verify-xcode-cloud-source-policy.sh|scripts/version.sh|scripts/with-xcode-lane.sh|scripts/xcode-cloud-audit.sh|scripts/xcode-cloud-start-pr.sh|scripts/xcode-lane-status.sh)
+      apple=1
+      ;;
+    scripts/sync-english-localizations.py|scripts/tests/test_localization_project_config.py|scripts/tests/test_sync_english_localizations.py|scripts/tests/test_task5_iphone_localization.py|scripts/tests/test_task6_watch_widget_localization.py|scripts/tests/test_verify_app_store_localizations.py|scripts/tests/test_verify_localizations.py|scripts/tests/verify-storekit-catalogue-tests.sh|scripts/verify-app-store-localizations.py|scripts/verify-localizations.py|scripts/xcstrings_schema.py)
       apple=1
       ;;
     scripts/with-build-host.sh|scripts/lib/build_host.py|scripts/tests/test_build_host.py|scripts/tests/test_build_host_review.py)
