@@ -28,6 +28,7 @@ while true; do
   case "$status" in
     A|C|D|M|T|U|X|B) ;;
     *)
+      printf 'UNSUPPORTED_STATUS\t%s\n' "$status" >&2
       blocked=1
       continue
       ;;
@@ -35,6 +36,7 @@ while true; do
 
   case "$path" in
     ''|/*|./*|../*|*/.|*/..|*/./*|*/../*|*//*|*/|*$'\t'*|*$'\n'*|*$'\r'*)
+      printf 'UNSAFE_PATH_SHAPE\t%s\n' "$path" >&2
       blocked=1
       continue
       ;;
@@ -100,10 +102,16 @@ while true; do
       ;;
     .github/workflows/ci.yml|.github/workflows/pr-source-policy.yml|scripts/classify-ci-changes.sh|scripts/verify-ci-classifier.sh|scripts/verify-ci-workflow.sh)
       if [ "$status" != "D" ]; then
+        printf 'RETIRED_PATH_NOT_DELETED\t%s\t%s\n' "$status" "$path" >&2
         blocked=1
       fi
       ;;
     *)
+      # Name the path on stderr. The stdout contract is one tab-separated
+      # record, so the reason cannot go there, and without it the caller sees
+      # only "the diff contains an unclassified path" with no way to tell
+      # which file or what to do about it.
+      printf 'UNCLASSIFIED_PATH\t%s\n' "$path" >&2
       blocked=1
       ;;
   esac
