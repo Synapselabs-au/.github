@@ -70,6 +70,12 @@ expect_classification $'apple\t0\t0' "shared AlarmKit metadata" A AlarmShared/Wa
 expect_classification $'apple\t0\t0' "AlarmKit controller tests" A RecovrAlarmKitTests/WakeAlarmControllerTests.swift
 expect_classification $'apple\t0\t0' "AlarmKit service tests" A RecovrAlarmKitTests/WakeAlarmServiceTests.swift
 expect_classification $'apple\t0\t0' "Watch source" M RecovrWatch/RecoveryView.swift
+expect_classification $'apple\t0\t0' "Swift verification workflow added" \
+  A .github/workflows/swift-verification.yml
+expect_classification $'apple\t0\t0' "Swift verification workflow modified" \
+  M .github/workflows/swift-verification.yml
+expect_classification $'apple\t0\t0' "Swift verification workflow with the Apple source it guards" \
+  M .github/workflows/swift-verification.yml M Recovr/AppModel.swift
 expect_classification $'apple\t0\t0' "Markdown inside an iPhone target" M Recovr/RuntimeContent.md
 expect_classification $'apple\t0\t0' "Markdown inside a Watch target" M RecovrWatch/RuntimeContent.md
 expect_classification $'apple\t0\t0' "project configuration" M project.yml
