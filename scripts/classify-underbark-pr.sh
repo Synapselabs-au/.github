@@ -102,6 +102,10 @@ while true; do
       ;;
     docs/brand/fonts/BricolageGrotesque-OFL.txt|docs/brand/fonts/HankenGrotesk-OFL.txt|docs/brand/fonts/SpaceMono-OFL.txt)
       ;;
+    # Exact local Git tooling and Linux fixture paths. Do not admit scripts/*.
+    # Runtime tests live in Underbark's isolated Linux tooling job.
+    scripts/agent_git.py|scripts/tests/test_agent_git.py|scripts/tests/test_swift_verification_routing.py)
+      ;;
     scripts/anonymise-export.py)
       ;;
     .gitattributes|.gitignore|*.md|.github/pull_request_template.md|.github/ISSUE_TEMPLATE/*)
