@@ -15,7 +15,6 @@
         "docs/TRUSTED_VERIFICATION.md",
         "docs/USER_FACING_COPY_POLICY.md",
         "docs/XCODE_CLOUD.md",
-        "docs/privacy/USER_FACING_CLAIMS.md",
         "scripts/repo_integrity/__init__.py",
         "scripts/repo_integrity/core.py",
         "scripts/repo_integrity/deterministic.py",
