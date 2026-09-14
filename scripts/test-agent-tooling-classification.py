@@ -3,13 +3,22 @@
 Run with: python3 scripts/test-agent-tooling-classification.py
 No GitHub access, credentials, Apple jobs or repository mutations are used.
 """
+import json
 from pathlib import Path
 import subprocess
 import unittest
 
 CLASSIFIER = Path(__file__).with_name('classify-underbark-pr.sh')
+PROTECTED_PATHS = Path(__file__).with_name('agent-context-protected-paths.json')
 TOOLS = ('scripts/agent_git.py', 'scripts/tests/test_agent_git.py',
          'scripts/tests/test_swift_verification_routing.py')
+CONTAINMENT_GUARDS = {
+    '.github/workflows/swift-verification.yml': 'apple\t0\t0',
+    'scripts/tests/test_ingestion_activation.py': 'apple\t0\t0',
+    'scripts/tests/test_swift_verification_routing.py': 'static\t0\t0',
+    'scripts/tests/verify-user-facing-copy-tests.sh': 'apple\t0\t0',
+    'scripts/verify-user-facing-copy.sh': 'apple\t0\t0',
+}
 
 
 def classify(*entries):
@@ -21,6 +30,16 @@ def classify(*entries):
 
 
 class AgentToolingClassification(unittest.TestCase):
+    def test_ingestion_containment_governance_is_classified_and_protected(self):
+        manifest = json.loads(PROTECTED_PATHS.read_text())
+        protected = set(
+            manifest['repositories']['Synapselabs-au/Underbark']['protected_paths']
+        )
+        for path, expected in CONTAINMENT_GUARDS.items():
+            with self.subTest(path=path):
+                self.assertEqual(classify(('M', path)), expected)
+                self.assertIn(path, protected)
+
     def test_only_named_tool_files_are_static(self):
         for path in TOOLS:
             for status in ('A', 'M', 'D'):

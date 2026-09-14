@@ -21,6 +21,7 @@ APP_PROTECTED_PATHS = [
     ".github/CODEOWNERS",
     ".github/repo-integrity-policy.json",
     ".github/workflows/repo-integrity-sentinel.yml",
+    ".github/workflows/swift-verification.yml",
     "AGENTS.md",
     "Config/XcodeCloudPolicy.json",
     "ci_scripts/ci_pre_xcodebuild.sh",
@@ -40,8 +41,12 @@ APP_PROTECTED_PATHS = [
     "scripts/repo_integrity/runner.py",
     "scripts/repo_integrity/semantic.py",
     "scripts/repo_integrity_audit.py",
+    "scripts/tests/test_ingestion_activation.py",
     "scripts/tests/test_repo_integrity_audit.py",
+    "scripts/tests/test_swift_verification_routing.py",
+    "scripts/tests/verify-user-facing-copy-tests.sh",
     "scripts/verify-governance.sh",
+    "scripts/verify-user-facing-copy.sh",
 ]
 WEBSITE_PROTECTED_PATHS = [
     "AGENTS.md",
