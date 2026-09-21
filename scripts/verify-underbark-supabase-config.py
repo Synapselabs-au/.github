@@ -7,31 +7,24 @@ import sys
 import tomllib
 
 
-# The approved Supabase configuration semantics. Keep this a tuple: a config
-# change lands as a two-digest transition window (old + new) so open PRs that
-# do not touch the configuration keep passing, then the old digest is retired
-# once the change merges to dev. Current window: dev after Underbark #443,
-# plus Underbark #545's dormant continuity reconciliation endpoint.
+# The approved Supabase configuration semantics. Keep this a tuple so a future
+# approved change can use a short transition window. Retire old digests after
+# the matching configuration reaches dev so stale semantics fail closed.
 #
-# Verify every incoming digest the same way: recompute both digests from the
-# two config.toml revisions, then diff the parsed configurations key by key
+# Verify every incoming digest the same way: recompute it from config.toml,
+# then diff the parsed configuration against the approved revision key by key
 # rather than reading the text diff. The approval question is not "how many
 # lines changed" but "what did the semantics gain, lose, or alter" — a
 # reordering changes the text and not the digest, while a single flipped
 # verify_jwt changes the digest and barely the text.
 EXPECTED_SHA256S = (
-    # Current dev after Underbark PR #443. Recomputed from origin/dev before
-    # approval. The older pre-#443 digest is retired because #443 has merged.
-    "b62d1e8c6d076e9d29ff7a77984a572f7355e0ceb225b3b645cc42d57ad91284",
-    # Underbark PR #545 adds only [functions.continuity-reconcile] with
-    # verify_jwt = false. The function remains release-disabled and dormant.
-    # Its handler requires an exact scheduler secret before it makes any
-    # database or Storage call. Recomputed from origin/dev and PR #545 before
-    # approval: exactly one function key was added, zero were removed, zero
-    # were changed, and no section outside [functions] changed. Approved by
-    # the owner on 2026-09-02. Drop the preceding digest after #545 merges to
-    # dev.
-    "5f63e9f4c83233ae642699241ac9766dbd12e1c53cb98029b7613c88c314e600",
+    # Current Underbark dev. Relative to the retired configuration, exactly
+    # three function entries were added: push-attest,
+    # apple-identity-notifications, and sentry-routine-relay. Each sets
+    # verify_jwt = false because its handler performs the endpoint-specific
+    # authentication required by its external caller. No function was removed,
+    # no existing value changed, and no section outside [functions] changed.
+    "ecabad5ba82e5f15ff56faa3e275d6c14ace9046fb7de63aaf8396ddf8006fc8",
 )
 
 

@@ -46,15 +46,22 @@ EXPECTED_DIGEST = hashlib.sha256(EXPECTED_BYTES).hexdigest()
 
 
 class SupabaseConfigVerifierTests(unittest.TestCase):
-    def test_default_transition_window_matches_current_and_candidate_digests(
-        self,
-    ) -> None:
+    def test_default_allowlist_contains_only_current_digest(self) -> None:
         self.assertEqual(
             VERIFIER.EXPECTED_SHA256S,
             (
-                "b62d1e8c6d076e9d29ff7a77984a572f7355e0ceb225b3b645cc42d57ad91284",
-                "5f63e9f4c83233ae642699241ac9766dbd12e1c53cb98029b7613c88c314e600",
+                "ecabad5ba82e5f15ff56faa3e275d6c14ace9046fb7de63aaf8396ddf8006fc8",
             ),
+        )
+
+    def test_retired_digests_are_not_approved(self) -> None:
+        self.assertNotIn(
+            "b62d1e8c6d076e9d29ff7a77984a572f7355e0ceb225b3b645cc42d57ad91284",
+            VERIFIER.EXPECTED_SHA256S,
+        )
+        self.assertNotIn(
+            "5f63e9f4c83233ae642699241ac9766dbd12e1c53cb98029b7613c88c314e600",
+            VERIFIER.EXPECTED_SHA256S,
         )
 
     def verify_text(self, text: str, expected_digest: str = EXPECTED_DIGEST) -> None:
