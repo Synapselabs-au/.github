@@ -338,6 +338,17 @@
       ],
       "pull_request": 741,
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "head_sha": "a0b0d164d9b2406677be9e12044f83c6a88f6863",
+      "protected_paths": [
+        ".github/workflows/swift-verification.yml",
+        "scripts/tests/test_ingestion_activation.py",
+        "scripts/tests/test_swift_verification_routing.py",
+        "scripts/tests/verify-user-facing-copy-tests.sh",
+        "scripts/verify-user-facing-copy.sh"
+      ],
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
