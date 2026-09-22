@@ -13,8 +13,8 @@ import tomllib
 # change merges to dev. The current approval is Underbark dev commit
 # 79c3e3161952b9167395fbf5fcf0727ae0e4f641 after PR #885.
 #
-# Verify every incoming digest the same way: recompute both digests from the
-# two config.toml revisions, then diff the parsed configurations key by key
+# Verify every incoming digest the same way: recompute it from config.toml,
+# then diff the parsed configuration against the approved revision key by key
 # rather than reading the text diff. The approval question is not "how many
 # lines changed" but "what did the semantics gain, lose, or alter" — a
 # reordering changes the text and not the digest, while a single flipped

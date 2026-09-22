@@ -54,6 +54,16 @@ class SupabaseConfigVerifierTests(unittest.TestCase):
             ),
         )
 
+    def test_retired_digests_are_not_approved(self) -> None:
+        self.assertNotIn(
+            "b62d1e8c6d076e9d29ff7a77984a572f7355e0ceb225b3b645cc42d57ad91284",
+            VERIFIER.EXPECTED_SHA256S,
+        )
+        self.assertNotIn(
+            "5f63e9f4c83233ae642699241ac9766dbd12e1c53cb98029b7613c88c314e600",
+            VERIFIER.EXPECTED_SHA256S,
+        )
+
     def verify_text(self, text: str, expected_digest: str = EXPECTED_DIGEST) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory, "config.toml")
