@@ -351,9 +351,10 @@
       "repository": "Synapselabs-au/Underbark"
     },
     {
-      "head_sha": "91f55e7644eaccb9dbc8bb831ac4af825e3ed1f4",
+      "head_sha": "b51fc4903968ff58afd0eb5015e8ce8d27411949",
       "protected_paths": [
         "docs/privacy/USER_FACING_CLAIMS.md",
+        "scripts/tests/test_ingestion_activation.py",
         "scripts/tests/verify-user-facing-copy-tests.sh",
         "scripts/verify-user-facing-copy.sh"
       ],
