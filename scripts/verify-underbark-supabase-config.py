@@ -9,9 +9,9 @@ import tomllib
 
 # The approved Supabase configuration semantics. Keep this a tuple: a config
 # change lands as a two-digest transition window (old + new) so open PRs that
-# do not touch the configuration keep passing, then the old digest is retired
-# once the change merges to dev. Current window: dev after Underbark #443,
-# plus Underbark #545's dormant continuity reconciliation endpoint.
+# do not touch the configuration keep passing. Retire the old digest once the
+# change merges to dev. The current approval is Underbark dev commit
+# 79c3e3161952b9167395fbf5fcf0727ae0e4f641 after PR #885.
 #
 # Verify every incoming digest the same way: recompute both digests from the
 # two config.toml revisions, then diff the parsed configurations key by key
@@ -20,18 +20,21 @@ import tomllib
 # reordering changes the text and not the digest, while a single flipped
 # verify_jwt changes the digest and barely the text.
 EXPECTED_SHA256S = (
-    # Current dev after Underbark PR #443. Recomputed from origin/dev before
-    # approval. The older pre-#443 digest is retired because #443 has merged.
-    "b62d1e8c6d076e9d29ff7a77984a572f7355e0ceb225b3b645cc42d57ad91284",
-    # Underbark PR #545 adds only [functions.continuity-reconcile] with
-    # verify_jwt = false. The function remains release-disabled and dormant.
-    # Its handler requires an exact scheduler secret before it makes any
-    # database or Storage call. Recomputed from origin/dev and PR #545 before
-    # approval: exactly one function key was added, zero were removed, zero
-    # were changed, and no section outside [functions] changed. Approved by
-    # the owner on 2026-09-02. Drop the preceding digest after #545 merges to
-    # dev.
-    "5f63e9f4c83233ae642699241ac9766dbd12e1c53cb98029b7613c88c314e600",
+    # Recomputed from Underbark dev commit
+    # 79c3e3161952b9167395fbf5fcf0727ae0e4f641.
+    # Compared with the last approved configuration at PR #545 merge commit
+    # 5b82e7a76ff341dd5d5d5e59910980f4d6727cc3, the parsed TOML adds only:
+    # [functions.push-attest] from PR #816 merge commit
+    # 236d5e21524624d6ec2b45bccaa56681456f43e3,
+    # [functions.apple-identity-notifications] from PR #878 merge commit
+    # a2d575cfd3fdb8453074a425deeb60face04e767, and
+    # [functions.sentry-routine-relay] from PR #885 merge commit
+    # 879015db7d368ffdb154b3cfb02070c3a6736b18. Each addition has
+    # verify_jwt = false. There are no removed or changed semantic keys and no
+    # semantic changes outside [functions]. Comments and formatting are not
+    # part of the canonical digest. The former PR #443 and PR #545 digests are
+    # retired because both configurations have already merged to dev.
+    "ecabad5ba82e5f15ff56faa3e275d6c14ace9046fb7de63aaf8396ddf8006fc8",
 )
 
 
