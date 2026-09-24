@@ -359,6 +359,22 @@
         "scripts/verify-user-facing-copy.sh"
       ],
       "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "protected_paths": [
+        "docs/privacy/USER_FACING_CLAIMS.md"
+      ],
+      "pull_request": 889,
+      "repository": "Synapselabs-au/Underbark"
+    },
+    {
+      "protected_paths": [
+        "scripts/tests/test_ingestion_activation.py",
+        "scripts/tests/verify-user-facing-copy-tests.sh",
+        "scripts/verify-user-facing-copy.sh"
+      ],
+      "pull_request": 900,
+      "repository": "Synapselabs-au/Underbark"
     }
   ]
 }
